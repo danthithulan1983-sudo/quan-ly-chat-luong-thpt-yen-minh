@@ -65,12 +65,10 @@ def load_and_transform_data(url):
 
 def ghi_ket_qua_len_sheet(df_ket_qua, link_sheet, ten_sheet_dich="Bao_Cao_AI"):
     try:
-        import json # Thêm thư viện đọc JSON
+        import json
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         
-        # Đọc chìa khóa từ Két sắt an toàn của Streamlit 
         try:
-            # THÊM strict=False ĐỂ BỎ QUA LỖI XUỐNG DÒNG ẨN
             creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"], strict=False)
             creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         except Exception as e:
@@ -88,6 +86,7 @@ def ghi_ket_qua_len_sheet(df_ket_qua, link_sheet, ten_sheet_dich="Bao_Cao_AI"):
         return True, f"✅ Đã xuất báo cáo thành công sang Sheet: '{ten_sheet_dich}'!"
     except Exception as e:
         return False, f"❌ Lỗi ghi dữ liệu: {e}"
+
 # ==========================================
 # 2. GIAO DIỆN PHÂN QUYỀN (SIDEBAR)
 # ==========================================
@@ -125,7 +124,6 @@ if gsheet_url:
         with col2: chon_mon = st.selectbox("Chọn Môn phân tích:", sorted(ds_mon))
         with col3: chi_tieu_mon = st.number_input(f"🎯 Chỉ tiêu Điểm TB môn {chon_mon}:", value=6.5, step=0.1)
 
-        # Lọc dữ liệu
         df_tat_ca_mon_dot_nay = df_doc[df_doc['Lan_Thi'] == chon_lan]
         df_hien_tai = df_tat_ca_mon_dot_nay[df_tat_ca_mon_dot_nay['Mon_Hoc'] == chon_mon].copy()
 
@@ -143,43 +141,37 @@ if gsheet_url:
             k2.metric("Số HS dự thi", f"{len(df_hien_tai)}")
             k3.metric("Môn yếu nhất hiện tại", f"{mon_yeu_nhat}", f"{diem_mon_yeu:.2f} điểm", delta_color="inverse")
             k4.metric("Môn dẫn đầu hiện tại", f"{tb_cac_mon.index[-1]}", f"{tb_cac_mon.iloc[-1]:.2f} điểm")
-# --- KHÔI PHỤC BIỂU ĐỒ PHỔ ĐIỂM (DÙNG DỮ LIỆU GỐC) ---
-        st.markdown("#### 📈 Biểu đồ trực quan Phổ điểm Toàn khối")
-        try:
-            # 1. Tự động đếm số lượng học sinh theo từng mức điểm từ dữ liệu gốc df_hien_tai
-            bins = [0, 3.4999, 4.9999, 6.4999, 7.9999, 10]
-            labels = ['<3.5', '3.5-5.0', '5.0-6.5', '6.5-8.0', '8.0-10']
-            
-            # Tạo một bảng dữ liệu tạm để vẽ
-            df_ve = pd.DataFrame()
-            df_ve['Mức điểm'] = pd.cut(df_hien_tai['Diem_Thi'], bins=bins, labels=labels, include_lowest=True)
-            du_lieu_ve = df_ve['Mức điểm'].value_counts().reindex(labels).reset_index()
-            du_lieu_ve.columns = ['Mức điểm', 'Số lượng HS']
-            
-            # 2. Vẽ biểu đồ bằng Plotly
-            fig = px.bar(du_lieu_ve, x='Mức điểm', y='Số lượng HS', 
-                         text='Số lượng HS',
-                         color='Mức điểm',
-                         color_discrete_sequence=px.colors.qualitative.Pastel)
-            
-            # Tùy chỉnh giao diện
-            fig.update_traces(textposition='outside', textfont_size=14)
-            fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="Số học sinh", margin=dict(t=20, b=0, l=0, r=0))
-            
-            # Hiển thị ra Web
-            st.plotly_chart(fig, use_container_width=True)
-            
-        except Exception as e:
-            st.error(f"🛑 Lỗi vẽ biểu đồ: {e}")
-            # --- TÍNH TOÁN PHỔ ĐIỂM ---
+
+            # --- KHÔI PHỤC BIỂU ĐỒ PHỔ ĐIỂM (DÙNG DỮ LIỆU GỐC) ---
+            st.markdown("#### 📈 Biểu đồ trực quan Phổ điểm Toàn khối")
+            try:
+                bins = [0, 3.4999, 4.9999, 6.4999, 7.9999, 10]
+                labels = ['<3.5', '3.5-5.0', '5.0-6.5', '6.5-8.0', '8.0-10']
+                
+                df_ve = pd.DataFrame()
+                df_ve['Mức điểm'] = pd.cut(df_hien_tai['Diem_Thi'], bins=bins, labels=labels, include_lowest=True)
+                du_lieu_ve = df_ve['Mức điểm'].value_counts().reindex(labels).reset_index()
+                du_lieu_ve.columns = ['Mức điểm', 'Số lượng HS']
+                
+                fig = px.bar(du_lieu_ve, x='Mức điểm', y='Số lượng HS', 
+                             text='Số lượng HS',
+                             color='Mức điểm',
+                             color_discrete_sequence=px.colors.qualitative.Pastel)
+                
+                fig.update_traces(textposition='outside', textfont_size=14)
+                fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="Số học sinh", margin=dict(t=20, b=0, l=0, r=0))
+                
+                st.plotly_chart(fig, use_container_width=True)
+            except Exception as e:
+                st.error(f"🛑 Lỗi vẽ biểu đồ: {e}")
+
+            # --- TÍNH TOÁN PHỔ ĐIỂM --- (Đoạn này đã được đưa ra ngoài khối except)
             bins = [-1, 3.499, 4.999, 6.999, 7.999, 10.1]
             labels = ['< 3.5', '3.5 - < 5.0', '5.0 - < 7.0', '7.0 - < 8.0', '8.0 - 10']
             df_hien_tai['Pho_Diem'] = pd.cut(df_hien_tai['Diem_Thi'], bins=bins, labels=labels, right=False)
             
-            # Tạo bảng CrossTab đếm số lượng phổ điểm (Ép hiển thị tất cả các cột dù bằng 0)
             bang_pho_diem = pd.crosstab(df_hien_tai['Lop'], df_hien_tai['Pho_Diem']).reindex(columns=labels, fill_value=0)
             
-            # Tính dòng Tổng Toàn Khối cho Phổ điểm
             dong_toan_khoi_pd = pd.DataFrame(bang_pho_diem.sum()).T
             dong_toan_khoi_pd.index = ['⭐ TOÀN KHỐI']
             bang_pho_diem = pd.concat([bang_pho_diem, dong_toan_khoi_pd])
@@ -191,27 +183,23 @@ if gsheet_url:
                 bao_cao_list.append({
                     'Lớp': lop, 
                     'Sĩ số': len(lop_data), 
-                    'Chỉ tiêu Giao': chi_tieu_mon,  # <--- ĐÃ THÊM CỘT CHỈ TIÊU
+                    'Chỉ tiêu Giao': chi_tieu_mon, 
                     'Điểm TB': round(lop_data['Diem_Thi'].mean(), 2), 
                     'Chênh lệch CT': round(lop_data['Diem_Thi'].mean() - chi_tieu_mon, 2)
                 })
             
             df_bao_cao = pd.DataFrame(bao_cao_list)
-            # Xếp hạng lớp dựa trên Điểm TB
             df_bao_cao = df_bao_cao.sort_values(by='Điểm TB', ascending=False).reset_index(drop=True)
             df_bao_cao.insert(0, 'Xếp hạng', range(1, len(df_bao_cao) + 1))
             
-            # Gộp Bảng xếp hạng với Bảng phổ điểm
             df_tong_hop = pd.merge(df_bao_cao, bang_pho_diem.reset_index(), left_on='Lớp', right_on='index', how='left').drop(columns=['index'])
             
-            # Thêm dòng Toàn khối vào bảng tổng hợp
             tb_khoi = df_hien_tai['Diem_Thi'].mean()
             d_toan_khoi = {
                 'Xếp hạng': '-', 'Lớp': '⭐ TOÀN KHỐI', 'Sĩ số': len(df_hien_tai),
-                'Chỉ tiêu Giao': chi_tieu_mon,  # <--- ĐÃ THÊM CỘT CHỈ TIÊU CHO TOÀN KHỐI
+                'Chỉ tiêu Giao': chi_tieu_mon, 
                 'Điểm TB': round(tb_khoi, 2), 'Chênh lệch CT': round(tb_khoi - chi_tieu_mon, 2)
             }
-            # Lấy số liệu phổ điểm toàn khối ghép vào
             for col in labels: d_toan_khoi[col] = dong_toan_khoi_pd[col].values[0]
             
             df_tong_hop.loc[len(df_tong_hop)] = d_toan_khoi
@@ -227,7 +215,6 @@ if gsheet_url:
                 buffer = io.BytesIO()
                 with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
                     df_tong_hop.to_excel(writer, sheet_name=f'Bao_Cao_Pho_Diem', index=False)
-                    # Ghi thêm sheet Phân tích các môn
                     pd.DataFrame({'Môn Học': tb_cac_mon.index, 'Điểm TB': tb_cac_mon.values.round(2)}).to_excel(writer, sheet_name='TB_Cac_Mon', index=False)
                 st.download_button("💾 Tải file Excel Báo cáo", data=buffer.getvalue(), file_name=f"Bao_Cao_{chon_mon}_{chon_lan}.xlsx", mime="application/vnd.ms-excel", use_container_width=True)
                 
@@ -274,7 +261,6 @@ if gsheet_url:
                     def tao_file_word(noi_dung):
                         doc = docx.Document()
                         
-                        # 1. Định dạng trang A4 và Căn lề (Trái 3cm, Phải-Trên-Dưới 2cm)
                         for section in doc.sections:
                             section.page_width = Cm(21)
                             section.page_height = Cm(29.7)
@@ -283,13 +269,11 @@ if gsheet_url:
                             section.top_margin = Cm(2)
                             section.bottom_margin = Cm(2)
 
-                        # 2. Định dạng Font chữ mặc định: Times New Roman, Cỡ 14
                         style = doc.styles['Normal']
                         font = style.font
                         font.name = 'Times New Roman'
                         font.size = Pt(14)
                         
-                        # 3. Thêm Quốc hiệu, Tiêu ngữ (Căn giữa, In đậm)
                         p_qh = doc.add_paragraph()
                         p_qh.alignment = WD_ALIGN_PARAGRAPH.CENTER
                         run_qh1 = p_qh.add_run("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM\n")
@@ -298,27 +282,24 @@ if gsheet_url:
                         run_qh2.bold = True
                         run_qh2.underline = True
                         
-                        # 4. Thêm Tiêu đề báo cáo
                         p_title = doc.add_paragraph()
                         p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
                         run_title = p_title.add_run(f"\nBÁO CÁO THAM MƯU CHUYÊN MÔN\nMÔN: {chon_mon.upper()} - ĐỢT: {chon_lan.upper()}")
                         run_title.bold = True
                         
-                        # 5. Đổ nội dung AI vào, tự động căn đều 2 bên (Justify)
                         cac_dong = noi_dung.split('\n')
                         for dong in cac_dong:
-                            if dong.strip() != "": # Bỏ qua các dòng trống thừa
+                            if dong.strip() != "": 
                                 p = doc.add_paragraph(dong)
-                                p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY # Căn đều 2 bên
-                                p.paragraph_format.space_after = Pt(6) # Cách đoạn dưới 6pt
-                                p.paragraph_format.line_spacing = 1.2 # Dãn dòng 1.2
+                                p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY 
+                                p.paragraph_format.space_after = Pt(6) 
+                                p.paragraph_format.line_spacing = 1.2 
                                 
                         buffer_word = io.BytesIO()
                         doc.save(buffer_word)
                         buffer_word.seek(0)
                         return buffer_word
                     
-                    # Nút tải xuống file Word (.docx)
                     file_word_san_sang = tao_file_word(st.session_state.ai_ket_qua)
                     st.download_button(
                         label="📄 Tải Báo cáo Word (.docx)",
@@ -327,4 +308,3 @@ if gsheet_url:
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                         use_container_width=True
                     )
-                    
