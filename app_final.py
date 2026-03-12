@@ -168,7 +168,7 @@ if gsheet_url:
             st.plotly_chart(fig, use_container_width=True)
             
         except Exception as e:
-            st.info("💡 Chưa có đủ dữ liệu để vẽ biểu đồ phổ điểm.")
+            st.error(f"🛑 Máy tính báo lỗi chính xác là: {e}")
             # --- TÍNH TOÁN PHỔ ĐIỂM ---
             bins = [-1, 3.499, 4.999, 6.999, 7.999, 10.1]
             labels = ['< 3.5', '3.5 - < 5.0', '5.0 - < 7.0', '7.0 - < 8.0', '8.0 - 10']
