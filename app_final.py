@@ -143,32 +143,34 @@ if gsheet_url:
             k2.metric("Số HS dự thi", f"{len(df_hien_tai)}")
             k3.metric("Môn yếu nhất hiện tại", f"{mon_yeu_nhat}", f"{diem_mon_yeu:.2f} điểm", delta_color="inverse")
             k4.metric("Môn dẫn đầu hiện tại", f"{tb_cac_mon.index[-1]}", f"{tb_cac_mon.iloc[-1]:.2f} điểm")
-# --- KHÔI PHỤC BIỂU ĐỒ PHỔ ĐIỂM ---
-        st.markdown("#### 📈 Biểu đồ trực quan Phổ điểm")
+# --- KHÔI PHỤC BIỂU ĐỒ PHỔ ĐIỂM (DÙNG DỮ LIỆU GỐC) ---
+        st.markdown("#### 📈 Biểu đồ trực quan Phổ điểm Toàn khối")
         try:
-            # Xác định các cột chứa phổ điểm (tùy theo tên cột trong file Excel của bạn)
-            cot_pho_diem = ['<3.5', '3.5-5.0', '5.0-6.5', '6.5-8.0', '8.0-10']
+            # 1. Tự động đếm số lượng học sinh theo từng mức điểm từ dữ liệu gốc df_hien_tai
+            bins = [0, 3.4999, 4.9999, 6.4999, 7.9999, 10]
+            labels = ['<3.5', '3.5-5.0', '5.0-6.5', '6.5-8.0', '8.0-10']
             
-            # Lấy dữ liệu dòng Tổng cộng (hoặc dòng đầu tiên) để vẽ
-            du_lieu_ve = df_ket_qua[cot_pho_diem].sum().reset_index()
+            # Tạo một bảng dữ liệu tạm để vẽ
+            df_ve = pd.DataFrame()
+            df_ve['Mức điểm'] = pd.cut(df_hien_tai['Diem_Thi'], bins=bins, labels=labels, include_lowest=True)
+            du_lieu_ve = df_ve['Mức điểm'].value_counts().reindex(labels).reset_index()
             du_lieu_ve.columns = ['Mức điểm', 'Số lượng HS']
             
-            # Vẽ biểu đồ cột bằng Plotly
+            # 2. Vẽ biểu đồ bằng Plotly
             fig = px.bar(du_lieu_ve, x='Mức điểm', y='Số lượng HS', 
                          text='Số lượng HS',
                          color='Mức điểm',
-                         color_discrete_sequence=px.colors.qualitative.Pastel,
-                         title="Phân bố điểm số toàn khối")
+                         color_discrete_sequence=px.colors.qualitative.Pastel)
             
-            # Tùy chỉnh giao diện biểu đồ cho đẹp mắt
+            # Tùy chỉnh giao diện
             fig.update_traces(textposition='outside', textfont_size=14)
-            fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="Số học sinh", margin=dict(t=40, b=0, l=0, r=0))
+            fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="Số học sinh", margin=dict(t=20, b=0, l=0, r=0))
             
-            # Lệnh quan trọng nhất: Hiển thị biểu đồ ra Web!
+            # Hiển thị ra Web
             st.plotly_chart(fig, use_container_width=True)
             
         except Exception as e:
-            st.error(f"🛑 Máy tính báo lỗi chính xác là: {e}")
+            st.error(f"🛑 Lỗi vẽ biểu đồ: {e}")
             # --- TÍNH TOÁN PHỔ ĐIỂM ---
             bins = [-1, 3.499, 4.999, 6.999, 7.999, 10.1]
             labels = ['< 3.5', '3.5 - < 5.0', '5.0 - < 7.0', '7.0 - < 8.0', '8.0 - 10']
