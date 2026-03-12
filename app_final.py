@@ -65,15 +65,16 @@ def load_and_transform_data(url):
 
 def ghi_ket_qua_len_sheet(df_ket_qua, link_sheet, ten_sheet_dich="Bao_Cao_AI"):
     try:
+        import json # Thêm thư viện đọc JSON
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        thu_muc_hien_tai = os.path.dirname(os.path.abspath(__file__))
         
-        cac_ten_co_the = ["credentials.json", "credentials", "credentials.json.json", "credentials.txt"]
-        duong_dan_chuan = next((os.path.join(thu_muc_hien_tai, t) for t in cac_ten_co_the if os.path.exists(os.path.join(thu_muc_hien_tai, t))), None)
-                
-        if not duong_dan_chuan: return False, "❌ Không tìm thấy file credentials."
+        # Đọc chìa khóa từ Két sắt an toàn của Streamlit thay vì đọc file vật lý
+        try:
+            creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        except Exception as e:
+            return False, f"❌ Chưa cấu hình Két sắt (Secrets) hoặc sai định dạng: {e}"
 
-        creds = ServiceAccountCredentials.from_json_keyfile_name(duong_dan_chuan, scope)
         client = gspread.authorize(creds)
         sheet_file = client.open_by_url(link_sheet)
         
