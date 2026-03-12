@@ -68,9 +68,10 @@ def ghi_ket_qua_len_sheet(df_ket_qua, link_sheet, ten_sheet_dich="Bao_Cao_AI"):
         import json # Thêm thư viện đọc JSON
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         
-        # Đọc chìa khóa từ Két sắt an toàn của Streamlit thay vì đọc file vật lý
+        # Đọc chìa khóa từ Két sắt an toàn của Streamlit 
         try:
-            creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
+            # THÊM strict=False ĐỂ BỎ QUA LỖI XUỐNG DÒNG ẨN
+            creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"], strict=False)
             creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         except Exception as e:
             return False, f"❌ Chưa cấu hình Két sắt (Secrets) hoặc sai định dạng: {e}"
@@ -87,7 +88,6 @@ def ghi_ket_qua_len_sheet(df_ket_qua, link_sheet, ten_sheet_dich="Bao_Cao_AI"):
         return True, f"✅ Đã xuất báo cáo thành công sang Sheet: '{ten_sheet_dich}'!"
     except Exception as e:
         return False, f"❌ Lỗi ghi dữ liệu: {e}"
-
 # ==========================================
 # 2. GIAO DIỆN PHÂN QUYỀN (SIDEBAR)
 # ==========================================
