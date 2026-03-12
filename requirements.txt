@@ -5,3 +5,5 @@ google-generativeai
 gspread
 oauth2client
 xlsxwriter
+python-docx
+pillow
