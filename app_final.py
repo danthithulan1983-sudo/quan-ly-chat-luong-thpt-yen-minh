@@ -40,45 +40,63 @@ st.markdown("<hr style='border: 0; height: 1px; background-image: linear-gradien
 @st.cache_data(ttl=10)
 def load_and_transform_data(url):
     try:
+        # 1. Tải dữ liệu thô từ Google Sheets
         file_id = url.split("/d/")[1].split("/")[0]
         export_url = f"https://docs.google.com/spreadsheets/d/{file_id}/gviz/tq?tqx=out:csv"
         df_raw = pd.read_csv(export_url, header=None)
         
-        header_idx = 0
-        for i in range(min(5, len(df_raw))):
+        # 2. TRUY TÌM CHÍNH XÁC DÒNG "LẦN THI" VÀ DÒNG "MÔN HỌC"
+        idx_lan = -1
+        idx_mon = -1
+        
+        for i in range(min(10, len(df_raw))):
             row_str = " ".join([str(x).lower() for x in df_raw.iloc[i].values])
-            if "họ và tên" in row_str or "họ_và_tên" in row_str or "lớp" in row_str or "lop" in row_str:
-                header_idx = i
-                break
+            # Quét tìm dòng chứa đợt thi
+            if "lần" in row_str or "đợt" in row_str:
+                idx_lan = i
+            # Quét tìm dòng chứa tên môn học chuyên môn
+            if "toán" in row_str or "ngữ" in row_str or "vật" in row_str or "hóa" in row_str or "sinh" in row_str:
+                idx_mon = i
                 
-        row0 = df_raw.iloc[header_idx - 1].copy() if header_idx > 0 else df_raw.iloc[0].copy()
-        row1 = df_raw.iloc[header_idx].copy()
+        if idx_lan == -1: idx_lan = 0
+        if idx_mon == -1: idx_mon = 1
         
-        for i in range(len(row0)):
-            val = str(row0.iloc[i]).strip()
+        row_lan = df_raw.iloc[idx_lan].copy()
+        row_mon = df_raw.iloc[idx_mon].copy()
+        
+        # 3. LẤP ĐẦY TRỘN Ô CHO DÒNG LẦN THI
+        for i in range(len(row_lan)):
+            val = str(row_lan.iloc[i]).strip()
             if val == "" or val.lower() in ["nan", "none", "unnamed"]:
-                row0.iloc[i] = None
-        row0 = row0.ffill() 
+                row_lan.iloc[i] = None
+        row_lan = row_lan.ffill() 
         
+        # 4. GỘP TIÊU ĐỀ THÔNG MINH
         new_cols = []
-        for c0, c1 in zip(row0, row1):
-            c0_str = str(c0).strip() if pd.notna(c0) else ""
-            c1_str = str(c1).strip() if pd.notna(c1) else ""
+        for c_lan, c_mon in zip(row_lan, row_mon):
+            lan = str(c_lan).strip() if pd.notna(c_lan) else ""
+            mon = str(c_mon).strip() if pd.notna(c_mon) else ""
             
-            if c0_str.lower() in ["nan", "none"] or "unnamed" in c0_str.lower(): c0_str = ""
-            if c1_str.lower() in ["nan", "none"] or "unnamed" in c1_str.lower(): c1_str = ""
+            if lan.lower() in ["nan", "none", "unnamed"]: lan = ""
+            if mon.lower() in ["nan", "none", "unnamed"]: mon = ""
             
-            if c1_str == "":
-                new_cols.append("CỘT_RÁC")
-            elif c0_str == "":
-                new_cols.append(c1_str)
+            if mon == "":
+                if "lần" in lan.lower() or "đợt" in lan.lower():
+                    new_cols.append("CỘT_RÁC")
+                else:
+                    new_cols.append(lan) # Bắt các cột cố định (TT, Lớp, Họ tên)
+            elif lan == "" or ("lần" not in lan.lower() and "đợt" not in lan.lower()):
+                new_cols.append(mon)
             else:
-                new_cols.append(f"{c1_str}|{c0_str}")
+                new_cols.append(f"{mon}|{lan}") # Bắt các cột điểm thi (Toán|Lần 1)
                 
-        df_ngang = df_raw.iloc[header_idx + 1:].reset_index(drop=True)
+        # 5. CHỐT DỮ LIỆU & DỌN CỘT RÁC
+        start_data_idx = max(idx_lan, idx_mon) + 1
+        df_ngang = df_raw.iloc[start_data_idx:].reset_index(drop=True)
         df_ngang.columns = new_cols
         df_ngang = df_ngang.loc[:, [c for c in df_ngang.columns if c != "CỘT_RÁC"]]
         
+        # 6. NHẬN DIỆN VÀ ÉP DỌC DỮ LIỆU
         cac_cot_co_dinh = [c for c in df_ngang.columns if '|' not in c]
         cac_cot_diem = [c for c in df_ngang.columns if '|' in c]
         
@@ -88,17 +106,18 @@ def load_and_transform_data(url):
         df_doc['Mon_Hoc'] = split_cols[0]
         df_doc['Lan_Thi'] = split_cols[1]
             
+        # 7. CHUẨN HÓA BẮT BUỘC TÊN CỘT LỚP (Để hiện chi tiết Bảng xếp hạng)
         rename_dict = {}
         for col in df_doc.columns:
             cl = str(col).lower().replace("_", " ").strip()
             if 'tên' in cl or 'ten' in cl:
                 rename_dict[col] = 'Ten_Hoc_Sinh'
-            if 'lớp' in cl or 'lop' in cl:
+            elif 'lớp' in cl or 'lop' in cl:
                 rename_dict[col] = 'Lop'
         
         df_doc = df_doc.rename(columns=rename_dict)
-        if 'Lop' not in df_doc.columns: df_doc['Lop'] = "Khối Chung"
-            
+        
+        # 8. DỌN DẸP DỮ LIỆU RÁC CỦA TỪNG HỌC SINH
         df_doc = df_doc.dropna(subset=['Diem_Thi', 'Mon_Hoc', 'Lan_Thi'])
         df_doc['Diem_Thi'] = df_doc['Diem_Thi'].astype(str).str.replace(',', '.')
         df_doc['Diem_Thi'] = pd.to_numeric(df_doc['Diem_Thi'], errors='coerce')
@@ -107,30 +126,6 @@ def load_and_transform_data(url):
         return df_doc, None
     except Exception as e:
         return None, f"🛑 Lỗi đọc dữ liệu: {e}"
-
-def ghi_ket_qua_len_sheet(df_ket_qua, link_sheet, ten_sheet_dich="Bao_Cao_AI"):
-    try:
-        import json
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        try:
-            creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"], strict=False)
-            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-        except Exception as e:
-            return False, f"❌ Chưa cấu hình Két sắt (Secrets) hoặc sai định dạng: {e}"
-
-        client = gspread.authorize(creds)
-        sheet_file = client.open_by_url(link_sheet)
-        
-        try: worksheet = sheet_file.worksheet(ten_sheet_dich)
-        except: worksheet = sheet_file.add_worksheet(title=ten_sheet_dich, rows="100", cols="20")
-            
-        worksheet.clear()
-        du_lieu_ghi = [df_ket_qua.columns.values.tolist()] + df_ket_qua.values.tolist()
-        worksheet.update(du_lieu_ghi)
-        return True, f"✅ Đã xuất báo cáo thành công sang Sheet: '{ten_sheet_dich}'!"
-    except Exception as e:
-        return False, f"❌ Lỗi ghi dữ liệu: {e}"
-
 # ==========================================
 # 2. GIAO DIỆN PHÂN QUYỀN
 # ==========================================
