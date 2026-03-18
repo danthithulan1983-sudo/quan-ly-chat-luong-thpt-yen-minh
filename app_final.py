@@ -46,7 +46,6 @@ def load_and_transform_data(url):
         df_raw = pd.read_csv(export_url, header=None)
         
         # 2. XÁC ĐỊNH CHÍNH XÁC 2 DÒNG TIÊU ĐỀ
-        # Quét tìm dòng có chữ "họ và tên" hoặc "lớp" để làm mốc
         header_idx = 0
         for i in range(min(5, len(df_raw))):
             row_str = " ".join([str(x).lower() for x in df_raw.iloc[i].values])
@@ -54,44 +53,47 @@ def load_and_transform_data(url):
                 header_idx = i
                 break
                 
-        # Dòng 0 (chứa Lần 1, Lần 2) nằm ngay trên dòng header_idx
+        # Dòng đợt thi (Lần 1, Lần 2...)
         row0 = df_raw.iloc[header_idx - 1].copy() if header_idx > 0 else df_raw.iloc[0].copy()
+        # Dòng môn học và thông tin (TT, Họ tên, Toán...)
         row1 = df_raw.iloc[header_idx].copy()
         
-        # 3. XỬ LÝ TRỘN Ô (Kéo dài Lần 1, Lần 2 sang phải)
+        # 3. LẤP ĐẦY TRỘN Ô (Kéo dài Lần 1, Lần 2 sang phải)
         for i in range(len(row0)):
             val = str(row0.iloc[i]).strip()
             if val == "" or val.lower() in ["nan", "none", "unnamed"]:
                 row0.iloc[i] = None
-        row0 = row0.ffill() # Điền vào các ô bị trộn
+        row0 = row0.ffill() 
         
-        # 4. GỘP TIÊU ĐỀ THÔNG MINH BẰNG DẤU '|'
+        # 4. GỘP TIÊU ĐỀ & ĐÁNH DẤU CỘT RÁC
         new_cols = []
         for c0, c1 in zip(row0, row1):
             c0_str = str(c0).strip() if pd.notna(c0) else ""
             c1_str = str(c1).strip() if pd.notna(c1) else ""
             
-            # Xóa các chữ rác của Pandas
+            # Xóa các chữ rác mặc định của thư viện Pandas
             if c0_str.lower() in ["nan", "none"] or "unnamed" in c0_str.lower(): c0_str = ""
             if c1_str.lower() in ["nan", "none"] or "unnamed" in c1_str.lower(): c1_str = ""
             
-            # Nếu trên đầu không có chữ "Lần..." (như TT, Họ và tên, Lớp) -> Giữ nguyên tên
-            if c0_str == "":
+            # BỘ LỌC CỘT RÁC: Có đợt thi nhưng KHÔNG CÓ MÔN HỌC (cột trống cuối bảng)
+            if c1_str == "":
+                new_cols.append("CỘT_RÁC")
+            # Cột thông tin cố định (TT, Họ tên, Lớp)
+            elif c0_str == "":
                 new_cols.append(c1_str)
-            # Nếu có đủ cả Đợt thi và Môn học -> Ghép lại (VD: Ngữ_văn|Lần 1)
-            elif c1_str != "":
-                new_cols.append(f"{c1_str}|{c0_str}")
+            # Cột điểm chuẩn (Có cả Đợt thi và Môn học)
             else:
-                new_cols.append(c0_str)
+                new_cols.append(f"{c1_str}|{c0_str}")
                 
-        # 5. CẮT BỎ TIÊU ĐỀ CŨ VÀ ÁP DỤNG TIÊU ĐỀ MỚI
+        # 5. CẮT BỎ TIÊU ĐỀ CŨ VÀ DỌN SẠCH CỘT RÁC
         df_ngang = df_raw.iloc[header_idx + 1:].reset_index(drop=True)
-        df_ngang.columns = [str(c).strip() for c in new_cols]
+        df_ngang.columns = new_cols
+        
+        # Tiêu hủy toàn bộ các cột bị đánh dấu "CỘT_RÁC" để bảo vệ hệ thống
+        df_ngang = df_ngang.loc[:, [c for c in df_ngang.columns if c != "CỘT_RÁC"]]
         
         # 6. NHẬN DIỆN CỘT THÔNG TIN VÀ CỘT ĐIỂM
-        # Cột nào KHÔNG có dấu '|' thì chắc chắn là cột thông tin (TT, Họ tên, Lớp...)
-        cac_cot_co_dinh = [c for c in df_ngang.columns if '|' not in c and c != ""]
-        # Cột nào CÓ dấu '|' thì chắc chắn là cột điểm
+        cac_cot_co_dinh = [c for c in df_ngang.columns if '|' not in c]
         cac_cot_diem = [c for c in df_ngang.columns if '|' in c]
         
         # 7. ÉP DỌC DỮ LIỆU
@@ -102,13 +104,13 @@ def load_and_transform_data(url):
         df_doc['Mon_Hoc'] = split_cols[0]
         df_doc['Lan_Thi'] = split_cols[1]
             
-        # 8. ĐỒNG BỘ TÊN CỘT ĐỂ XỬ LÝ (Bất chấp GV gõ thế nào)
+        # 8. ĐỒNG BỘ TÊN CỘT ĐỂ XỬ LÝ
         for col in df_doc.columns:
             cl = str(col).lower()
             if 'tên' in cl: df_doc = df_doc.rename(columns={col: 'Ten_Hoc_Sinh'})
             if 'lớp' in cl or 'lop' in cl: df_doc = df_doc.rename(columns={col: 'Lop'})
             
-        # 9. DỌN DẸP DỮ LIỆU RÁC
+        # 9. DỌN DẸP DỮ LIỆU RÁC CỦA TỪNG HỌC SINH (Xóa HS vắng thi)
         df_doc = df_doc.dropna(subset=['Diem_Thi', 'Mon_Hoc', 'Lan_Thi'])
         df_doc['Diem_Thi'] = df_doc['Diem_Thi'].astype(str).str.replace(',', '.')
         df_doc['Diem_Thi'] = pd.to_numeric(df_doc['Diem_Thi'], errors='coerce')
