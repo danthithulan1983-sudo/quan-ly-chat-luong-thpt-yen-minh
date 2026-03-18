@@ -48,13 +48,10 @@ def load_and_transform_data(url):
         # 2. TRUY TÌM CHÍNH XÁC DÒNG "LẦN THI" VÀ DÒNG "MÔN HỌC"
         idx_lan = -1
         idx_mon = -1
-        
         for i in range(min(10, len(df_raw))):
             row_str = " ".join([str(x).lower() for x in df_raw.iloc[i].values])
-            # Quét tìm dòng chứa đợt thi
             if "lần" in row_str or "đợt" in row_str:
                 idx_lan = i
-            # Quét tìm dòng chứa tên môn học chuyên môn
             if "toán" in row_str or "ngữ" in row_str or "vật" in row_str or "hóa" in row_str or "sinh" in row_str:
                 idx_mon = i
                 
@@ -64,7 +61,7 @@ def load_and_transform_data(url):
         row_lan = df_raw.iloc[idx_lan].copy()
         row_mon = df_raw.iloc[idx_mon].copy()
         
-        # 3. LẤP ĐẦY TRỘN Ô CHO DÒNG LẦN THI
+        # 3. LẤP ĐẦY TRỘN Ô
         for i in range(len(row_lan)):
             val = str(row_lan.iloc[i]).strip()
             if val == "" or val.lower() in ["nan", "none", "unnamed"]:
@@ -84,46 +81,63 @@ def load_and_transform_data(url):
                 if "lần" in lan.lower() or "đợt" in lan.lower():
                     new_cols.append("CỘT_RÁC")
                 else:
-                    new_cols.append(lan) # Bắt các cột cố định (TT, Lớp, Họ tên)
+                    new_cols.append(lan)
             elif lan == "" or ("lần" not in lan.lower() and "đợt" not in lan.lower()):
                 new_cols.append(mon)
             else:
-                new_cols.append(f"{mon}|{lan}") # Bắt các cột điểm thi (Toán|Lần 1)
+                new_cols.append(f"{mon}|{lan}")
                 
-        # 5. CHỐT DỮ LIỆU & DỌN CỘT RÁC
+        # 5. TẠO DATAFRAME VÀ DỌN DẸP CỘT TRÙNG LẶP (CHỐNG LỖI DATAFRAME OBJECT)
         start_data_idx = max(idx_lan, idx_mon) + 1
         df_ngang = df_raw.iloc[start_data_idx:].reset_index(drop=True)
         df_ngang.columns = new_cols
-        df_ngang = df_ngang.loc[:, [c for c in df_ngang.columns if c != "CỘT_RÁC"]]
         
-        # 6. NHẬN DIỆN VÀ ÉP DỌC DỮ LIỆU
+        # Dùng mask boolean để xóa cột rác mà KHÔNG làm nhân bản các cột khác
+        mask_not_rac = [c != "CỘT_RÁC" for c in df_ngang.columns]
+        df_ngang = df_ngang.loc[:, mask_not_rac]
+        
+        # Hủy diệt tuyệt đối các cột có tên trùng nhau (do Google Sheets nhả ra) để bảo vệ hệ thống
+        df_ngang = df_ngang.loc[:, ~df_ngang.columns.duplicated()]
+        
+        # 6. ÉP DỌC DỮ LIỆU BẰNG TÊN BIẾN ẢO (Tránh trùng với tên cột thực tế của GV)
         cac_cot_co_dinh = [c for c in df_ngang.columns if '|' not in c]
         cac_cot_diem = [c for c in df_ngang.columns if '|' in c]
         
-        df_doc = pd.melt(df_ngang, id_vars=cac_cot_co_dinh, value_vars=cac_cot_diem, var_name='Mon_Lan', value_name='Diem_Thi')
+        df_doc = pd.melt(df_ngang, id_vars=cac_cot_co_dinh, value_vars=cac_cot_diem, 
+                         var_name='_VAR_AI_', value_name='_VAL_AI_')
         
-        split_cols = df_doc['Mon_Lan'].str.split('|', n=1, expand=True)
+        split_cols = df_doc['_VAR_AI_'].str.split('|', n=1, expand=True)
         df_doc['Mon_Hoc'] = split_cols[0]
         df_doc['Lan_Thi'] = split_cols[1]
+        df_doc['Diem_Thi'] = df_doc['_VAL_AI_']
             
-        # 7. CHUẨN HÓA BẮT BUỘC TÊN CỘT LỚP (Để hiện chi tiết Bảng xếp hạng)
+        # 7. ĐỔI TÊN CỘT AN TOÀN TUYỆT ĐỐI (Chỉ lấy cột đầu tiên khớp điều kiện)
         rename_dict = {}
+        has_ten = False
+        has_lop = False
         for col in df_doc.columns:
             cl = str(col).lower().replace("_", " ").strip()
-            if 'tên' in cl or 'ten' in cl:
+            if not has_ten and ('tên' in cl or 'ten' in cl):
                 rename_dict[col] = 'Ten_Hoc_Sinh'
-            elif 'lớp' in cl or 'lop' in cl:
+                has_ten = True
+            elif not has_lop and ('lớp' in cl or 'lop' in cl):
                 rename_dict[col] = 'Lop'
+                has_lop = True
         
         df_doc = df_doc.rename(columns=rename_dict)
+        if 'Lop' not in df_doc.columns: df_doc['Lop'] = "Khối Chung"
+        if 'Ten_Hoc_Sinh' not in df_doc.columns: df_doc['Ten_Hoc_Sinh'] = "Chưa rõ"
+            
+        # 8. RÚT TRÍCH ĐÚNG 5 CỘT CẦN THIẾT (Xóa sạch mọi rác metadata như Ngày sinh, Ghi chú...)
+        df_clean = df_doc[['Ten_Hoc_Sinh', 'Lop', 'Mon_Hoc', 'Lan_Thi', 'Diem_Thi']].copy()
         
-        # 8. DỌN DẸP DỮ LIỆU RÁC CỦA TỪNG HỌC SINH
-        df_doc = df_doc.dropna(subset=['Diem_Thi', 'Mon_Hoc', 'Lan_Thi'])
-        df_doc['Diem_Thi'] = df_doc['Diem_Thi'].astype(str).str.replace(',', '.')
-        df_doc['Diem_Thi'] = pd.to_numeric(df_doc['Diem_Thi'], errors='coerce')
-        df_doc = df_doc.dropna(subset=['Diem_Thi'])
+        # 9. XỬ LÝ ĐIỂM SỐ CHUYÊN SÂU
+        df_clean = df_clean.dropna(subset=['Diem_Thi', 'Mon_Hoc', 'Lan_Thi'])
+        df_clean['Diem_Thi'] = df_clean['Diem_Thi'].astype(str).str.replace(',', '.')
+        df_clean['Diem_Thi'] = pd.to_numeric(df_clean['Diem_Thi'], errors='coerce')
+        df_clean = df_clean.dropna(subset=['Diem_Thi'])
         
-        return df_doc, None
+        return df_clean, None
     except Exception as e:
         return None, f"🛑 Lỗi đọc dữ liệu: {e}"
 # ==========================================
