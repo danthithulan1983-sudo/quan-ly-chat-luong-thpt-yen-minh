@@ -292,4 +292,11 @@ if gsheet_url:
                                     1. Bảng Xếp hạng và Phổ điểm môn {chon_mon}:
                                     {df_tong_hop.to_string(index=False)}
                                     
-                                    2. Cảnh báo toàn khối: Môn {mon_yeu_nhat} đang có điểm trung bình thấp nhất
+                                    2. Cảnh báo toàn khối: Môn {mon_yeu_nhat} đang có điểm trung bình thấp nhất ({diem_mon_yeu:.2f} điểm).
+                                    
+                                    Yêu cầu viết báo cáo:
+                                    - Nhận xét Xếp hạng các lớp môn {chon_mon}. Đánh giá chi tiết sự phân bổ phổ điểm (đặc biệt nhấn mạnh thực trạng học sinh nhóm < 3.5 và nhóm 3.5 - <5.0).
+                                    - Chỉ ra nguyên nhân có thể khiến môn {mon_yeu_nhat} tụt dốc.
+                                    - Đề xuất 3 giải pháp thực chiến, cấp bách để kéo điểm trung bình, xóa mù điểm liệt, chuẩn bị cho kỳ thi tốt nghiệp THPT sắp tới.
+                                    """
+                                    st.session_state.ai_ket_qua = model.generate_content(prompt).text
