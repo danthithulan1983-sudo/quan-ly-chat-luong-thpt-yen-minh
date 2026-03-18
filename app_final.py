@@ -60,10 +60,11 @@ def load_and_transform_data(url):
         row_lan = df_raw.iloc[idx_lan].copy()
         row_mon = df_raw.iloc[idx_mon].copy()
         
-        # LẤP ĐẦY TRỘN Ô ĐỂ MÁY TÍNH HIỂU
+        # LẤP ĐẦY TRỘN Ô ĐỂ MÁY TÍNH HIỂU (Đã sửa lỗi Unnamed cực kỳ linh hoạt)
         for i in range(len(row_lan)):
             val = str(row_lan.iloc[i]).strip()
-            if val == "" or val.lower() in ["nan", "none", "unnamed"]:
+            # CHÌA KHÓA Ở ĐÂY: Quét mọi chữ có chứa 'unnamed' để xóa
+            if val == "" or val.lower() == "nan" or val.lower() == "none" or "unnamed" in val.lower():
                 row_lan.iloc[i] = None
         row_lan = row_lan.ffill() 
         
@@ -73,8 +74,8 @@ def load_and_transform_data(url):
             lan = str(c_lan).strip() if pd.notna(c_lan) else ""
             mon = str(c_mon).strip() if pd.notna(c_mon) else ""
             
-            if lan.lower() in ["nan", "none", "unnamed"]: lan = ""
-            if mon.lower() in ["nan", "none", "unnamed"]: mon = ""
+            if lan.lower() == "nan" or lan.lower() == "none" or "unnamed" in lan.lower(): lan = ""
+            if mon.lower() == "nan" or mon.lower() == "none" or "unnamed" in mon.lower(): mon = ""
             
             if mon == "":
                 if "lần" in lan.lower() or "đợt" in lan.lower(): new_cols.append("CỘT_RÁC")
@@ -133,6 +134,30 @@ def load_and_transform_data(url):
     except Exception as e:
         return None, f"🛑 Lỗi đọc dữ liệu: {e}"
 
+# --- PHỤC HỒI HÀM XUẤT GOOGLE SHEETS ---
+def ghi_ket_qua_len_sheet(df_ket_qua, link_sheet, ten_sheet_dich="Bao_Cao_AI"):
+    try:
+        import json
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        try:
+            creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"], strict=False)
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        except Exception as e:
+            return False, f"❌ Chưa cấu hình Két sắt (Secrets) hoặc sai định dạng: {e}"
+
+        client = gspread.authorize(creds)
+        sheet_file = client.open_by_url(link_sheet)
+        
+        try: worksheet = sheet_file.worksheet(ten_sheet_dich)
+        except: worksheet = sheet_file.add_worksheet(title=ten_sheet_dich, rows="100", cols="20")
+            
+        worksheet.clear()
+        du_lieu_ghi = [df_ket_qua.columns.values.tolist()] + df_ket_qua.values.tolist()
+        worksheet.update(du_lieu_ghi)
+        return True, f"✅ Đã xuất báo cáo thành công sang Sheet: '{ten_sheet_dich}'!"
+    except Exception as e:
+        return False, f"❌ Lỗi ghi dữ liệu: {e}"
+
 # ==========================================
 # 2. GIAO DIỆN HỆ THỐNG
 # ==========================================
@@ -171,17 +196,15 @@ if gsheet_url:
         tab1, tab2, tab3 = st.tabs(["📊 1. TỔNG QUAN TOÀN KHỐI", "📈 2. TIẾN TRÌNH BỘ MÔN", "🏆 3. XẾP HẠNG CHI TIẾT LỚP"])
         
         # ---------------------------------------------------------------------
-        # TAB 1: TỔNG QUAN TOÀN KHỐI (SO SÁNH CÁC LẦN THI CỦA TẤT CẢ MÔN)
+        # TAB 1: TỔNG QUAN TOÀN KHỐI
         # ---------------------------------------------------------------------
         with tab1:
             st.markdown("#### 🌟 Biến động Điểm Trung bình Chung qua các Đợt thi")
-            # Tính TB của tất cả học sinh, tất cả các môn trong 1 đợt thi
             tb_khoi_cac_lan = df_doc.groupby('Lan_Thi')['Diem_Thi'].mean().reset_index()
             tb_khoi_cac_lan['Điểm TB Chung'] = tb_khoi_cac_lan['Diem_Thi'].round(2)
             tb_khoi_cac_lan['Chỉ tiêu Giao'] = chi_tieu_chung
             tb_khoi_cac_lan['Chênh lệch'] = (tb_khoi_cac_lan['Điểm TB Chung'] - chi_tieu_chung).round(2)
             
-            # Vẽ biểu đồ đường thể hiện sự tiến bộ
             fig_chung = go.Figure()
             fig_chung.add_trace(go.Scatter(x=tb_khoi_cac_lan['Lan_Thi'], y=tb_khoi_cac_lan['Điểm TB Chung'],
                                            mode='lines+markers+text', name='Thực tế',
@@ -197,7 +220,7 @@ if gsheet_url:
             st.dataframe(tb_khoi_cac_lan[['Lan_Thi', 'Điểm TB Chung', 'Chỉ tiêu Giao', 'Chênh lệch']], use_container_width=True, hide_index=True)
 
         # ---------------------------------------------------------------------
-        # TAB 2: TIẾN TRÌNH BỘ MÔN (SO SÁNH 1 MÔN QUA CÁC ĐỢT)
+        # TAB 2: TIẾN TRÌNH BỘ MÔN
         # ---------------------------------------------------------------------
         with tab2:
             chon_mon_tab2 = st.selectbox("🔍 Chọn Môn học để xem tiến trình:", ds_mon, key='mon_tab2')
@@ -222,7 +245,7 @@ if gsheet_url:
                 st.dataframe(tb_mon_cac_lan[['Lan_Thi', 'Điểm TB Môn', 'Chênh lệch']], hide_index=True)
 
         # ---------------------------------------------------------------------
-        # TAB 3: XẾP HẠNG CHI TIẾT LỚP & AI (PHÂN TÍCH SÂU 1 ĐỢT - 1 MÔN)
+        # TAB 3: XẾP HẠNG CHI TIẾT LỚP & AI (PHỤC HỒI NÚT XUẤT GOOGLE SHEETS)
         # ---------------------------------------------------------------------
         with tab3:
             cc1, cc2 = st.columns(2)
@@ -234,7 +257,6 @@ if gsheet_url:
             if df_hien_tai.empty:
                 st.warning(f"Chưa có dữ liệu cho môn {chon_mon} đợt {chon_lan}.")
             else:
-                # Tính phổ điểm
                 bins = [-1, 3.499, 4.999, 6.999, 7.999, 10.1]
                 labels = ['< 3.5', '3.5 - < 5.0', '5.0 - < 7.0', '7.0 - < 8.0', '8.0 - 10']
                 df_hien_tai['Pho_Diem'] = pd.cut(df_hien_tai['Diem_Thi'], bins=bins, labels=labels, right=False)
@@ -244,7 +266,6 @@ if gsheet_url:
                 dong_toan_khoi_pd.index = ['⭐ TOÀN KHỐI']
                 bang_pho_diem = pd.concat([bang_pho_diem, dong_toan_khoi_pd])
                 
-                # Bảng Xếp hạng
                 bao_cao_list = []
                 for lop in sorted(df_hien_tai['Lop'].unique()):
                     lop_data = df_hien_tai[df_hien_tai['Lop'] == lop]
@@ -260,7 +281,6 @@ if gsheet_url:
                 df_bao_cao.insert(0, 'Xếp hạng', range(1, len(df_bao_cao) + 1))
                 df_tong_hop = pd.merge(df_bao_cao, bang_pho_diem.reset_index(), left_on='Lớp', right_on='index', how='left').drop(columns=['index'])
                 
-                # Dòng tổng kết Toàn khối
                 tb_khoi = df_hien_tai['Diem_Thi'].mean()
                 d_toan_khoi = {
                     'Xếp hạng': '-', 'Lớp': '⭐ TOÀN KHỐI', 'Sĩ số': len(df_hien_tai),
@@ -269,21 +289,28 @@ if gsheet_url:
                 for col in labels: d_toan_khoi[col] = dong_toan_khoi_pd[col].values[0]
                 df_tong_hop.loc[len(df_tong_hop)] = d_toan_khoi
 
-                # Hiển thị
                 st.markdown(f"#### 📥 Bảng Xếp hạng & Phổ điểm lớp (Môn {chon_mon} - {chon_lan})")
                 st.dataframe(df_tong_hop, use_container_width=True, hide_index=True)
                 
-                # Nút tải và AI
-                c_btn1, c_btn2 = st.columns(2)
+                # --- PHỤC HỒI NÚT XUẤT SHEET VÀ TẢI EXCEL ---
+                c_btn1, c_btn2, c_btn3 = st.columns(3)
                 with c_btn1:
                     buffer = io.BytesIO()
                     with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
                         df_tong_hop.to_excel(writer, sheet_name=f'Bao_Cao', index=False)
-                    st.download_button("💾 Tải file Excel Báo cáo Chi tiết", data=buffer.getvalue(), file_name=f"Bao_Cao_{chon_mon}_{chon_lan}.xlsx", mime="application/vnd.ms-excel", use_container_width=True)
+                    st.download_button("💾 Tải file Excel Báo cáo", data=buffer.getvalue(), file_name=f"Bao_Cao_{chon_mon}_{chon_lan}.xlsx", mime="application/vnd.ms-excel", use_container_width=True)
                 with c_btn2:
-                    if st.button("🤖 AI Soạn thảo Báo cáo Tham mưu", type="primary", use_container_width=True):
+                    if st.button("🚀 XUẤT LÊN GOOGLE SHEETS", type="primary", use_container_width=True):
                         if is_admin:
-                            with st.spinner("AI đang phân tích bảng xếp hạng và phổ điểm..."):
+                            with st.spinner("Đang đồng bộ lên Sheet..."):
+                                thanh_cong, msg = ghi_ket_qua_len_sheet(df_tong_hop, gsheet_url, f"Báo Cáo {chon_mon} - {chon_lan}")
+                                if thanh_cong: st.success(msg)
+                                else: st.error(msg)
+                        else: st.warning("🔒 Vui lòng đăng nhập quyền Quản trị!")
+                with c_btn3:
+                    if st.button("🤖 AI Tham mưu Báo cáo", type="primary", use_container_width=True):
+                        if is_admin:
+                            with st.spinner("Đang phân tích phổ điểm..."):
                                 try:
                                     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
                                     cac_model = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
