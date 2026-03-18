@@ -49,7 +49,7 @@ def load_and_transform_data(url):
         header_idx = 0
         for i in range(min(5, len(df_raw))):
             row_str = " ".join([str(x).lower() for x in df_raw.iloc[i].values])
-            if "họ và tên" in row_str or "họ_và_tên" in row_str or "lớp" in row_str:
+            if "họ và tên" in row_str or "họ_và_tên" in row_str or "lớp" in row_str or "lop" in row_str:
                 header_idx = i
                 break
                 
@@ -75,21 +75,17 @@ def load_and_transform_data(url):
             if c0_str.lower() in ["nan", "none"] or "unnamed" in c0_str.lower(): c0_str = ""
             if c1_str.lower() in ["nan", "none"] or "unnamed" in c1_str.lower(): c1_str = ""
             
-            # BỘ LỌC CỘT RÁC: Có đợt thi nhưng KHÔNG CÓ MÔN HỌC (cột trống cuối bảng)
+            # BỘ LỌC CỘT RÁC: Có đợt thi nhưng KHÔNG CÓ MÔN HỌC
             if c1_str == "":
                 new_cols.append("CỘT_RÁC")
-            # Cột thông tin cố định (TT, Họ tên, Lớp)
             elif c0_str == "":
                 new_cols.append(c1_str)
-            # Cột điểm chuẩn (Có cả Đợt thi và Môn học)
             else:
                 new_cols.append(f"{c1_str}|{c0_str}")
                 
         # 5. CẮT BỎ TIÊU ĐỀ CŨ VÀ DỌN SẠCH CỘT RÁC
         df_ngang = df_raw.iloc[header_idx + 1:].reset_index(drop=True)
         df_ngang.columns = new_cols
-        
-        # Tiêu hủy toàn bộ các cột bị đánh dấu "CỘT_RÁC" để bảo vệ hệ thống
         df_ngang = df_ngang.loc[:, [c for c in df_ngang.columns if c != "CỘT_RÁC"]]
         
         # 6. NHẬN DIỆN CỘT THÔNG TIN VÀ CỘT ĐIỂM
@@ -99,18 +95,27 @@ def load_and_transform_data(url):
         # 7. ÉP DỌC DỮ LIỆU
         df_doc = pd.melt(df_ngang, id_vars=cac_cot_co_dinh, value_vars=cac_cot_diem, var_name='Mon_Lan', value_name='Diem_Thi')
         
-        # Tách Môn học và Lần thi từ dấu '|'
         split_cols = df_doc['Mon_Lan'].str.split('|', n=1, expand=True)
         df_doc['Mon_Hoc'] = split_cols[0]
         df_doc['Lan_Thi'] = split_cols[1]
             
-        # 8. ĐỒNG BỘ TÊN CỘT ĐỂ XỬ LÝ
+        # 8. ĐỒNG BỘ TÊN CỘT BẰNG TỪ ĐIỂN (Chống lỗi KeyError)
+        rename_dict = {}
         for col in df_doc.columns:
-            cl = str(col).lower()
-            if 'tên' in cl: df_doc = df_doc.rename(columns={col: 'Ten_Hoc_Sinh'})
-            if 'lớp' in cl or 'lop' in cl: df_doc = df_doc.rename(columns={col: 'Lop'})
+            cl = str(col).lower().replace("_", " ").strip()
+            if 'tên' in cl or 'ten' in cl:
+                rename_dict[col] = 'Ten_Hoc_Sinh'
+            if 'lớp' in cl or 'lop' in cl:
+                rename_dict[col] = 'Lop'
+        
+        # Đổi tên cột hàng loạt an toàn
+        df_doc = df_doc.rename(columns=rename_dict)
+        
+        # Mạng lưới an toàn: Nếu giáo viên quên tạo cột Lớp, auto gán là Toàn khối
+        if 'Lop' not in df_doc.columns:
+            df_doc['Lop'] = "Khối Chung"
             
-        # 9. DỌN DẸP DỮ LIỆU RÁC CỦA TỪNG HỌC SINH (Xóa HS vắng thi)
+        # 9. DỌN DẸP DỮ LIỆU RÁC CỦA TỪNG HỌC SINH
         df_doc = df_doc.dropna(subset=['Diem_Thi', 'Mon_Hoc', 'Lan_Thi'])
         df_doc['Diem_Thi'] = df_doc['Diem_Thi'].astype(str).str.replace(',', '.')
         df_doc['Diem_Thi'] = pd.to_numeric(df_doc['Diem_Thi'], errors='coerce')
