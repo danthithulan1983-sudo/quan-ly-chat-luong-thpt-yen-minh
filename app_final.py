@@ -40,41 +40,78 @@ st.markdown("<hr style='border: 0; height: 1px; background-image: linear-gradien
 @st.cache_data(ttl=10)
 def load_and_transform_data(url):
     try:
+        # 1. Tải dữ liệu thô từ Google Sheets
         file_id = url.split("/d/")[1].split("/")[0]
         export_url = f"https://docs.google.com/spreadsheets/d/{file_id}/gviz/tq?tqx=out:csv"
         df_raw = pd.read_csv(export_url, header=None)
         
-        # XỬ LÝ 2 DÒNG TIÊU ĐỀ TRỘN Ô
-        row0 = df_raw.iloc[0].ffill()
-        row1 = df_raw.iloc[1]
+        # 2. TÌM DÒNG CHỨA TIÊU ĐỀ CỐ ĐỊNH (Tránh việc rớt nhịp nếu có dòng Tên Trường ở trên cùng)
+        header_idx = 0
+        for i in range(min(5, len(df_raw))):
+            row_str = " ".join([str(x).lower() for x in df_raw.iloc[i].values])
+            if "lớp" in row_str or "họ" in row_str or "tên" in row_str:
+                header_idx = i
+                break
+                
+        # 3. XỬ LÝ ĐẶC SẢN "TRỘN Ô" CỦA GOOGLE SHEETS
+        row0 = df_raw.iloc[header_idx].copy()
+        row1 = df_raw.iloc[header_idx + 1].copy()
         
+        # CHÌA KHÓA PHÁ BẪY: Ép các chuỗi rỗng "" thành None để hàm ffill hoạt động
+        for i in range(len(row0)):
+            val = str(row0.iloc[i]).strip()
+            if val == "" or val.lower() == "nan" or val.lower() == "none" or "unnamed" in val.lower():
+                row0.iloc[i] = None
+                
+        row0 = row0.ffill() # Giờ thì "Lần 1" đã được kéo dài qua tất cả các môn!
+        
+        # Gộp dòng 1 và dòng 2 (VD: Toán + Lần 1 = Toán_Lần 1)
         new_cols = []
         for c0, c1 in zip(row0, row1):
             c0_str = str(c0).strip() if pd.notna(c0) else ""
             c1_str = str(c1).strip() if pd.notna(c1) else ""
             
-            if c1_str == "" or c1_str.lower() == "nan":
+            if c1_str == "" or c1_str.lower() == "nan" or c1_str.lower() == "none":
                 new_cols.append(c0_str)
+            elif c0_str == "" or c0_str.lower() == "nan" or c0_str.lower() == "none":
+                new_cols.append(c1_str)
             else:
                 new_cols.append(f"{c1_str}_{c0_str}")
                 
-        df_ngang = df_raw.iloc[2:].reset_index(drop=True)
-        df_ngang.columns = new_cols
+        # Xóa các dòng tiêu đề cũ, áp dụng tiêu đề mới và xóa khoảng trắng thừa
+        df_ngang = df_raw.iloc[header_idx + 2:].reset_index(drop=True)
+        df_ngang.columns = [str(c).strip() for c in new_cols]
         
-        # Bắt thông minh các cột cố định
-        cac_cot_co_dinh = [c for c in ['TT', 'STT', 'Họ_và_tên', 'Họ_tên', 'Ten_Hoc_Sinh', 'Ngày_tháng_năm_sinh', 'Lớp', 'Lop'] if c in df_ngang.columns]
+        # 4. NHẬN DIỆN CỘT THÔNG TIN THÔNG MINH (Bất chấp gõ hoa hay thường)
+        cac_cot_co_dinh = []
+        for c in df_ngang.columns:
+            if c.lower() in ['tt', 'stt', 'họ_và_tên', 'họ_tên', 'họ và tên', 'ten_hoc_sinh', 'ngày_tháng_năm_sinh', 'ngày sinh', 'lớp', 'lop']:
+                cac_cot_co_dinh.append(c)
+                
         cac_cot_diem = [c for c in df_ngang.columns if c not in cac_cot_co_dinh]
         
-        df_doc = pd.melt(df_ngang, id_vars=cac_cot_co_dinh, value_vars=cac_cot_diem, 
-                         var_name='Mon_Lan', value_name='Diem_Thi')
+        # 5. ÉP DỌC DỮ LIỆU ĐỂ AI PHÂN TÍCH
+        df_doc = pd.melt(df_ngang, id_vars=cac_cot_co_dinh, value_vars=cac_cot_diem, var_name='Mon_Lan', value_name='Diem_Thi')
         
-        # CHÚ Ý: Dùng rsplit để chặt từ phải sang, tránh nát tên môn Ngữ_văn
-        df_doc[['Mon_Hoc', 'Lan_Thi']] = df_doc['Mon_Lan'].str.rsplit('_', n=1, expand=True)
+        # Tách tên Môn học và Lần thi
+        try:
+            split_cols = df_doc['Mon_Lan'].str.rsplit('_', n=1, expand=True)
+            if split_cols.shape[1] == 2:
+                df_doc['Mon_Hoc'] = split_cols[0]
+                df_doc['Lan_Thi'] = split_cols[1]
+            else:
+                df_doc['Mon_Hoc'] = df_doc['Mon_Lan']
+                df_doc['Lan_Thi'] = "Lần 1"
+        except Exception:
+            df_doc['Mon_Hoc'] = df_doc['Mon_Lan']
+            df_doc['Lan_Thi'] = "Lần 1"
         
-        # Đổi tên cho đồng bộ với thuật toán phía dưới
-        if 'Họ_và_tên' in df_doc.columns: df_doc = df_doc.rename(columns={'Họ_và_tên': 'Ten_Hoc_Sinh'})
-        if 'Lớp' in df_doc.columns: df_doc = df_doc.rename(columns={'Lớp': 'Lop'})
+        # Chuẩn hóa tên cột để các hàm tính phổ điểm bên dưới chạy mượt
+        for col in df_doc.columns:
+            if col.lower() in ['họ_và_tên', 'họ_tên', 'họ và tên']: df_doc = df_doc.rename(columns={col: 'Ten_Hoc_Sinh'})
+            if col.lower() in ['lớp', 'lop']: df_doc = df_doc.rename(columns={col: 'Lop'})
         
+        # Dọn rác
         df_doc = df_doc.dropna(subset=['Diem_Thi', 'Mon_Hoc', 'Lan_Thi'])
         df_doc['Diem_Thi'] = df_doc['Diem_Thi'].astype(str).str.replace(',', '.')
         df_doc['Diem_Thi'] = pd.to_numeric(df_doc['Diem_Thi'], errors='coerce')
@@ -82,30 +119,7 @@ def load_and_transform_data(url):
         
         return df_doc, None
     except Exception as e:
-        return None, f"🛑 Lỗi đọc dữ liệu: {e}. Vui lòng kiểm tra lại cấu trúc file."
-
-def ghi_ket_qua_len_sheet(df_ket_qua, link_sheet, ten_sheet_dich="Bao_Cao_AI"):
-    try:
-        import json
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        try:
-            creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"], strict=False)
-            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-        except Exception as e:
-            return False, f"❌ Chưa cấu hình Két sắt (Secrets) hoặc sai định dạng: {e}"
-
-        client = gspread.authorize(creds)
-        sheet_file = client.open_by_url(link_sheet)
-        
-        try: worksheet = sheet_file.worksheet(ten_sheet_dich)
-        except: worksheet = sheet_file.add_worksheet(title=ten_sheet_dich, rows="100", cols="20")
-            
-        worksheet.clear()
-        du_lieu_ghi = [df_ket_qua.columns.values.tolist()] + df_ket_qua.values.tolist()
-        worksheet.update(du_lieu_ghi)
-        return True, f"✅ Đã xuất báo cáo thành công sang Sheet: '{ten_sheet_dich}'!"
-    except Exception as e:
-        return False, f"❌ Lỗi ghi dữ liệu: {e}"
+        return None, f"🛑 Lỗi đọc dữ liệu: {e}"
 
 # ==========================================
 # 2. GIAO DIỆN PHÂN QUYỀN
