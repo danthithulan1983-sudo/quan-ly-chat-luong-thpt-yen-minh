@@ -53,12 +53,10 @@ def load_and_transform_data(url):
                 header_idx = i
                 break
                 
-        # Dòng đợt thi (Lần 1, Lần 2...)
         row0 = df_raw.iloc[header_idx - 1].copy() if header_idx > 0 else df_raw.iloc[0].copy()
-        # Dòng môn học và thông tin (TT, Họ tên, Toán...)
         row1 = df_raw.iloc[header_idx].copy()
         
-        # 3. LẤP ĐẦY TRỘN Ô (Kéo dài Lần 1, Lần 2 sang phải)
+        # 3. LẤP ĐẦY TRỘN Ô
         for i in range(len(row0)):
             val = str(row0.iloc[i]).strip()
             if val == "" or val.lower() in ["nan", "none", "unnamed"]:
@@ -71,11 +69,9 @@ def load_and_transform_data(url):
             c0_str = str(c0).strip() if pd.notna(c0) else ""
             c1_str = str(c1).strip() if pd.notna(c1) else ""
             
-            # Xóa các chữ rác mặc định của thư viện Pandas
             if c0_str.lower() in ["nan", "none"] or "unnamed" in c0_str.lower(): c0_str = ""
             if c1_str.lower() in ["nan", "none"] or "unnamed" in c1_str.lower(): c1_str = ""
             
-            # BỘ LỌC CỘT RÁC: Có đợt thi nhưng KHÔNG CÓ MÔN HỌC
             if c1_str == "":
                 new_cols.append("CỘT_RÁC")
             elif c0_str == "":
@@ -99,7 +95,7 @@ def load_and_transform_data(url):
         df_doc['Mon_Hoc'] = split_cols[0]
         df_doc['Lan_Thi'] = split_cols[1]
             
-        # 8. ĐỒNG BỘ TÊN CỘT BẰNG TỪ ĐIỂN (Chống lỗi KeyError)
+        # 8. ĐỒNG BỘ TÊN CỘT BẰNG TỪ ĐIỂN
         rename_dict = {}
         for col in df_doc.columns:
             cl = str(col).lower().replace("_", " ").strip()
@@ -108,14 +104,10 @@ def load_and_transform_data(url):
             if 'lớp' in cl or 'lop' in cl:
                 rename_dict[col] = 'Lop'
         
-        # Đổi tên cột hàng loạt an toàn
         df_doc = df_doc.rename(columns=rename_dict)
-        
-        # Mạng lưới an toàn: Nếu giáo viên quên tạo cột Lớp, auto gán là Toàn khối
-        if 'Lop' not in df_doc.columns:
-            df_doc['Lop'] = "Khối Chung"
+        if 'Lop' not in df_doc.columns: df_doc['Lop'] = "Khối Chung"
             
-        # 9. DỌN DẸP DỮ LIỆU RÁC CỦA TỪNG HỌC SINH
+        # 9. DỌN DẸP DỮ LIỆU RÁC
         df_doc = df_doc.dropna(subset=['Diem_Thi', 'Mon_Hoc', 'Lan_Thi'])
         df_doc['Diem_Thi'] = df_doc['Diem_Thi'].astype(str).str.replace(',', '.')
         df_doc['Diem_Thi'] = pd.to_numeric(df_doc['Diem_Thi'], errors='coerce')
@@ -124,6 +116,30 @@ def load_and_transform_data(url):
         return df_doc, None
     except Exception as e:
         return None, f"🛑 Lỗi đọc dữ liệu: {e}"
+
+# --- HÀM XUẤT GOOGLE SHEETS BỊ THIẾU ĐÃ ĐƯỢC BỔ SUNG LẠI TẠI ĐÂY ---
+def ghi_ket_qua_len_sheet(df_ket_qua, link_sheet, ten_sheet_dich="Bao_Cao_AI"):
+    try:
+        import json
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        try:
+            creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"], strict=False)
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        except Exception as e:
+            return False, f"❌ Chưa cấu hình Két sắt (Secrets) hoặc sai định dạng: {e}"
+
+        client = gspread.authorize(creds)
+        sheet_file = client.open_by_url(link_sheet)
+        
+        try: worksheet = sheet_file.worksheet(ten_sheet_dich)
+        except: worksheet = sheet_file.add_worksheet(title=ten_sheet_dich, rows="100", cols="20")
+            
+        worksheet.clear()
+        du_lieu_ghi = [df_ket_qua.columns.values.tolist()] + df_ket_qua.values.tolist()
+        worksheet.update(du_lieu_ghi)
+        return True, f"✅ Đã xuất báo cáo thành công sang Sheet: '{ten_sheet_dich}'!"
+    except Exception as e:
+        return False, f"❌ Lỗi ghi dữ liệu: {e}"
 
 # ==========================================
 # 2. GIAO DIỆN PHÂN QUYỀN
@@ -170,7 +186,6 @@ if gsheet_url:
         else:
             tb_cac_mon = df_tat_ca_mon_dot_nay.groupby('Mon_Hoc')['Diem_Thi'].mean().sort_values()
             
-            # Khóa an toàn chống lỗi IndexError
             if tb_cac_mon.empty:
                 st.warning("Không có đủ điểm số hợp lệ để xếp hạng môn học.")
             else:
@@ -196,11 +211,7 @@ if gsheet_url:
                     du_lieu_ve = df_ve['Mức điểm'].value_counts().reindex(labels).reset_index()
                     du_lieu_ve.columns = ['Mức điểm', 'Số lượng HS']
                     
-                    fig = px.bar(du_lieu_ve, x='Mức điểm', y='Số lượng HS', 
-                                 text='Số lượng HS',
-                                 color='Mức điểm',
-                                 color_discrete_sequence=px.colors.qualitative.Pastel)
-                    
+                    fig = px.bar(du_lieu_ve, x='Mức điểm', y='Số lượng HS', text='Số lượng HS', color='Mức điểm', color_discrete_sequence=px.colors.qualitative.Pastel)
                     fig.update_traces(textposition='outside', textfont_size=14)
                     fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="Số học sinh", margin=dict(t=20, b=0, l=0, r=0))
                     
@@ -281,67 +292,4 @@ if gsheet_url:
                                     1. Bảng Xếp hạng và Phổ điểm môn {chon_mon}:
                                     {df_tong_hop.to_string(index=False)}
                                     
-                                    2. Cảnh báo toàn khối: Môn {mon_yeu_nhat} đang có điểm trung bình thấp nhất ({diem_mon_yeu:.2f} điểm).
-                                    
-                                    Yêu cầu viết báo cáo:
-                                    - Nhận xét Xếp hạng các lớp môn {chon_mon}. Đánh giá chi tiết sự phân bổ phổ điểm (đặc biệt nhấn mạnh thực trạng học sinh nhóm < 3.5 và nhóm 3.5 - <5.0).
-                                    - Chỉ ra nguyên nhân có thể khiến môn {mon_yeu_nhat} tụt dốc.
-                                    - Đề xuất 3 giải pháp thực chiến, cấp bách để kéo điểm trung bình, xóa mù điểm liệt, chuẩn bị cho kỳ thi tốt nghiệp THPT sắp tới.
-                                    """
-                                    st.session_state.ai_ket_qua = model.generate_content(prompt).text
-                                except Exception as e: st.error(f"Lỗi AI: {e}")
-                        else: st.warning("🔒 Vui lòng đăng nhập quyền Quản trị!")
-
-                    if st.session_state.ai_ket_qua != "":
-                        van_ban = st.text_area("Khung Soạn thảo Báo cáo:", value=st.session_state.ai_ket_qua, height=400)
-                        st.session_state.ai_ket_qua = van_ban
-                        
-                        def tao_file_word(noi_dung):
-                            doc = docx.Document()
-                            for section in doc.sections:
-                                section.page_width = Cm(21)
-                                section.page_height = Cm(29.7)
-                                section.left_margin = Cm(3)
-                                section.right_margin = Cm(2)
-                                section.top_margin = Cm(2)
-                                section.bottom_margin = Cm(2)
-
-                            style = doc.styles['Normal']
-                            font = style.font
-                            font.name = 'Times New Roman'
-                            font.size = Pt(14)
-                            
-                            p_qh = doc.add_paragraph()
-                            p_qh.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                            run_qh1 = p_qh.add_run("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM\n")
-                            run_qh1.bold = True
-                            run_qh2 = p_qh.add_run("Độc lập - Tự do - Hạnh phúc")
-                            run_qh2.bold = True
-                            run_qh2.underline = True
-                            
-                            p_title = doc.add_paragraph()
-                            p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                            run_title = p_title.add_run(f"\nBÁO CÁO THAM MƯU CHUYÊN MÔN\nMÔN: {chon_mon.upper()} - ĐỢT: {chon_lan.upper()}")
-                            run_title.bold = True
-                            
-                            cac_dong = noi_dung.split('\n')
-                            for dong in cac_dong:
-                                if dong.strip() != "": 
-                                    p = doc.add_paragraph(dong)
-                                    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY 
-                                    p.paragraph_format.space_after = Pt(6) 
-                                    p.paragraph_format.line_spacing = 1.2 
-                                    
-                            buffer_word = io.BytesIO()
-                            doc.save(buffer_word)
-                            buffer_word.seek(0)
-                            return buffer_word
-                        
-                        file_word_san_sang = tao_file_word(st.session_state.ai_ket_qua)
-                        st.download_button(
-                            label="📄 Tải Báo cáo Word (.docx)",
-                            data=file_word_san_sang,
-                            file_name=f"Bao_Cao_Tham_Muu_AI_{chon_mon}_{chon_lan}.docx",
-                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                            use_container_width=True
-                        )
+                                    2. Cảnh báo toàn khối: Môn {mon_yeu_nhat} đang có điểm trung bình thấp nhất
