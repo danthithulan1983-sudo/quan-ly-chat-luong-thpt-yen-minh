@@ -45,70 +45,70 @@ def load_and_transform_data(url):
         export_url = f"https://docs.google.com/spreadsheets/d/{file_id}/gviz/tq?tqx=out:csv"
         df_raw = pd.read_csv(export_url, header=None)
         
-        # 2. TÌM CHÍNH XÁC DÒNG CHỨA TIÊU ĐỀ
+        # 2. XÁC ĐỊNH CHÍNH XÁC 2 DÒNG TIÊU ĐỀ
+        # Quét tìm dòng có chữ "họ và tên" hoặc "lớp" để làm mốc
         header_idx = 0
         for i in range(min(5, len(df_raw))):
             row_str = " ".join([str(x).lower() for x in df_raw.iloc[i].values])
-            if "lớp" in row_str or "họ" in row_str or "tên" in row_str:
+            if "họ và tên" in row_str or "họ_và_tên" in row_str or "lớp" in row_str:
                 header_idx = i
                 break
                 
-        row0 = df_raw.iloc[header_idx].copy()
-        row1 = df_raw.iloc[header_idx + 1].copy()
+        # Dòng 0 (chứa Lần 1, Lần 2) nằm ngay trên dòng header_idx
+        row0 = df_raw.iloc[header_idx - 1].copy() if header_idx > 0 else df_raw.iloc[0].copy()
+        row1 = df_raw.iloc[header_idx].copy()
         
-        # 3. LẤP ĐẦY TRỘN Ô (Kéo dài chữ 'Lần 1', 'Lần 2' cho các môn)
+        # 3. XỬ LÝ TRỘN Ô (Kéo dài Lần 1, Lần 2 sang phải)
         for i in range(len(row0)):
             val = str(row0.iloc[i]).strip()
-            if val == "" or val.lower() == "nan" or val.lower() == "none" or "unnamed" in val.lower():
+            if val == "" or val.lower() in ["nan", "none", "unnamed"]:
                 row0.iloc[i] = None
-        row0 = row0.ffill()
+        row0 = row0.ffill() # Điền vào các ô bị trộn
         
-        # 4. GỘP TIÊU ĐỀ BẰNG DẤU PHÂN CÁCH TUYỆT ĐỐI '|' (Tránh nhầm với _ của Ngữ_văn)
+        # 4. GỘP TIÊU ĐỀ THÔNG MINH BẰNG DẤU '|'
         new_cols = []
         for c0, c1 in zip(row0, row1):
             c0_str = str(c0).strip() if pd.notna(c0) else ""
             c1_str = str(c1).strip() if pd.notna(c1) else ""
             
-            if c0_str.lower() in ["nan", "none", "unnamed"]: c0_str = ""
-            if c1_str.lower() in ["nan", "none", "unnamed"]: c1_str = ""
+            # Xóa các chữ rác của Pandas
+            if c0_str.lower() in ["nan", "none"] or "unnamed" in c0_str.lower(): c0_str = ""
+            if c1_str.lower() in ["nan", "none"] or "unnamed" in c1_str.lower(): c1_str = ""
             
-            if c1_str == "":
-                new_cols.append(c0_str)
-            elif c0_str == "":
+            # Nếu trên đầu không có chữ "Lần..." (như TT, Họ và tên, Lớp) -> Giữ nguyên tên
+            if c0_str == "":
                 new_cols.append(c1_str)
+            # Nếu có đủ cả Đợt thi và Môn học -> Ghép lại (VD: Ngữ_văn|Lần 1)
+            elif c1_str != "":
+                new_cols.append(f"{c1_str}|{c0_str}")
             else:
-                new_cols.append(f"{c1_str}|{c0_str}") # VD: Ngữ_văn|Lần 1
+                new_cols.append(c0_str)
                 
-        df_ngang = df_raw.iloc[header_idx + 2:].reset_index(drop=True)
+        # 5. CẮT BỎ TIÊU ĐỀ CŨ VÀ ÁP DỤNG TIÊU ĐỀ MỚI
+        df_ngang = df_raw.iloc[header_idx + 1:].reset_index(drop=True)
         df_ngang.columns = [str(c).strip() for c in new_cols]
         
-        # 5. TÁCH CỘT CỐ ĐỊNH & CỘT ĐIỂM
-        cac_cot_co_dinh = []
-        for c in df_ngang.columns:
-            cl = c.lower()
-            if cl in ['tt', 'stt', 'họ_và_tên', 'họ_tên', 'họ và tên', 'ten_hoc_sinh', 'ngày_tháng_năm_sinh', 'ngày sinh', 'lớp', 'lop']:
-                cac_cot_co_dinh.append(c)
-                
-        cac_cot_diem = [c for c in df_ngang.columns if c not in cac_cot_co_dinh]
+        # 6. NHẬN DIỆN CỘT THÔNG TIN VÀ CỘT ĐIỂM
+        # Cột nào KHÔNG có dấu '|' thì chắc chắn là cột thông tin (TT, Họ tên, Lớp...)
+        cac_cot_co_dinh = [c for c in df_ngang.columns if '|' not in c and c != ""]
+        # Cột nào CÓ dấu '|' thì chắc chắn là cột điểm
+        cac_cot_diem = [c for c in df_ngang.columns if '|' in c]
         
-        # 6. ÉP DỌC DỮ LIỆU
+        # 7. ÉP DỌC DỮ LIỆU
         df_doc = pd.melt(df_ngang, id_vars=cac_cot_co_dinh, value_vars=cac_cot_diem, var_name='Mon_Lan', value_name='Diem_Thi')
         
-        # 7. TÁCH MÔN HỌC & LẦN THI (Chắc chắn 100% đúng nhờ dấu |)
+        # Tách Môn học và Lần thi từ dấu '|'
         split_cols = df_doc['Mon_Lan'].str.split('|', n=1, expand=True)
         df_doc['Mon_Hoc'] = split_cols[0]
-        if split_cols.shape[1] > 1:
-            df_doc['Lan_Thi'] = split_cols[1]
-        else:
-            df_doc['Lan_Thi'] = "Lần 1"
+        df_doc['Lan_Thi'] = split_cols[1]
             
-        # 8. CHUẨN HÓA TÊN CỘT ĐỂ HIỂN THỊ TRÊN WEB
+        # 8. ĐỒNG BỘ TÊN CỘT ĐỂ XỬ LÝ (Bất chấp GV gõ thế nào)
         for col in df_doc.columns:
-            cl = col.lower()
-            if cl in ['họ_và_tên', 'họ_tên', 'họ và tên']: df_doc = df_doc.rename(columns={col: 'Ten_Hoc_Sinh'})
-            if cl in ['lớp', 'lop']: df_doc = df_doc.rename(columns={col: 'Lop'})
+            cl = str(col).lower()
+            if 'tên' in cl: df_doc = df_doc.rename(columns={col: 'Ten_Hoc_Sinh'})
+            if 'lớp' in cl or 'lop' in cl: df_doc = df_doc.rename(columns={col: 'Lop'})
             
-        # 9. DỌN DẸP DỮ LIỆU RÁC (Xóa HS vắng thi)
+        # 9. DỌN DẸP DỮ LIỆU RÁC
         df_doc = df_doc.dropna(subset=['Diem_Thi', 'Mon_Hoc', 'Lan_Thi'])
         df_doc['Diem_Thi'] = df_doc['Diem_Thi'].astype(str).str.replace(',', '.')
         df_doc['Diem_Thi'] = pd.to_numeric(df_doc['Diem_Thi'], errors='coerce')
