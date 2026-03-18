@@ -40,12 +40,10 @@ st.markdown("<hr style='border: 0; height: 1px; background-image: linear-gradien
 @st.cache_data(ttl=10)
 def load_and_transform_data(url):
     try:
-        # 1. Tải dữ liệu thô từ Google Sheets
         file_id = url.split("/d/")[1].split("/")[0]
         export_url = f"https://docs.google.com/spreadsheets/d/{file_id}/gviz/tq?tqx=out:csv"
         df_raw = pd.read_csv(export_url, header=None)
         
-        # 2. XÁC ĐỊNH CHÍNH XÁC 2 DÒNG TIÊU ĐỀ
         header_idx = 0
         for i in range(min(5, len(df_raw))):
             row_str = " ".join([str(x).lower() for x in df_raw.iloc[i].values])
@@ -56,14 +54,12 @@ def load_and_transform_data(url):
         row0 = df_raw.iloc[header_idx - 1].copy() if header_idx > 0 else df_raw.iloc[0].copy()
         row1 = df_raw.iloc[header_idx].copy()
         
-        # 3. LẤP ĐẦY TRỘN Ô
         for i in range(len(row0)):
             val = str(row0.iloc[i]).strip()
             if val == "" or val.lower() in ["nan", "none", "unnamed"]:
                 row0.iloc[i] = None
         row0 = row0.ffill() 
         
-        # 4. GỘP TIÊU ĐỀ & ĐÁNH DẤU CỘT RÁC
         new_cols = []
         for c0, c1 in zip(row0, row1):
             c0_str = str(c0).strip() if pd.notna(c0) else ""
@@ -79,23 +75,19 @@ def load_and_transform_data(url):
             else:
                 new_cols.append(f"{c1_str}|{c0_str}")
                 
-        # 5. CẮT BỎ TIÊU ĐỀ CŨ VÀ DỌN SẠCH CỘT RÁC
         df_ngang = df_raw.iloc[header_idx + 1:].reset_index(drop=True)
         df_ngang.columns = new_cols
         df_ngang = df_ngang.loc[:, [c for c in df_ngang.columns if c != "CỘT_RÁC"]]
         
-        # 6. NHẬN DIỆN CỘT THÔNG TIN VÀ CỘT ĐIỂM
         cac_cot_co_dinh = [c for c in df_ngang.columns if '|' not in c]
         cac_cot_diem = [c for c in df_ngang.columns if '|' in c]
         
-        # 7. ÉP DỌC DỮ LIỆU
         df_doc = pd.melt(df_ngang, id_vars=cac_cot_co_dinh, value_vars=cac_cot_diem, var_name='Mon_Lan', value_name='Diem_Thi')
         
         split_cols = df_doc['Mon_Lan'].str.split('|', n=1, expand=True)
         df_doc['Mon_Hoc'] = split_cols[0]
         df_doc['Lan_Thi'] = split_cols[1]
             
-        # 8. ĐỒNG BỘ TÊN CỘT BẰNG TỪ ĐIỂN
         rename_dict = {}
         for col in df_doc.columns:
             cl = str(col).lower().replace("_", " ").strip()
@@ -107,7 +99,6 @@ def load_and_transform_data(url):
         df_doc = df_doc.rename(columns=rename_dict)
         if 'Lop' not in df_doc.columns: df_doc['Lop'] = "Khối Chung"
             
-        # 9. DỌN DẸP DỮ LIỆU RÁC
         df_doc = df_doc.dropna(subset=['Diem_Thi', 'Mon_Hoc', 'Lan_Thi'])
         df_doc['Diem_Thi'] = df_doc['Diem_Thi'].astype(str).str.replace(',', '.')
         df_doc['Diem_Thi'] = pd.to_numeric(df_doc['Diem_Thi'], errors='coerce')
@@ -117,7 +108,6 @@ def load_and_transform_data(url):
     except Exception as e:
         return None, f"🛑 Lỗi đọc dữ liệu: {e}"
 
-# --- HÀM XUẤT GOOGLE SHEETS BỊ THIẾU ĐÃ ĐƯỢC BỔ SUNG LẠI TẠI ĐÂY ---
 def ghi_ket_qua_len_sheet(df_ket_qua, link_sheet, ten_sheet_dich="Bao_Cao_AI"):
     try:
         import json
@@ -287,6 +277,7 @@ if gsheet_url:
                                     cac_model = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
                                     model = genai.GenerativeModel(next((m for m in cac_model if 'flash' in m), cac_model[0]))
                                     
+                                    # CHÍNH LÀ CHỖ NÀY: Dấu ngoặc kép đã được khóa chặt!
                                     prompt = f"""
                                     Dưới tư cách là Ban Giám Hiệu, hãy phân tích kỳ thi đợt {chon_lan}:
                                     1. Bảng Xếp hạng và Phổ điểm môn {chon_mon}:
@@ -300,3 +291,59 @@ if gsheet_url:
                                     - Đề xuất 3 giải pháp thực chiến, cấp bách để kéo điểm trung bình, xóa mù điểm liệt, chuẩn bị cho kỳ thi tốt nghiệp THPT sắp tới.
                                     """
                                     st.session_state.ai_ket_qua = model.generate_content(prompt).text
+                                except Exception as e: st.error(f"Lỗi AI: {e}")
+                        else: st.warning("🔒 Vui lòng đăng nhập quyền Quản trị!")
+
+                    if st.session_state.ai_ket_qua != "":
+                        van_ban = st.text_area("Khung Soạn thảo Báo cáo:", value=st.session_state.ai_ket_qua, height=400)
+                        st.session_state.ai_ket_qua = van_ban
+                        
+                        def tao_file_word(noi_dung):
+                            doc = docx.Document()
+                            for section in doc.sections:
+                                section.page_width = Cm(21)
+                                section.page_height = Cm(29.7)
+                                section.left_margin = Cm(3)
+                                section.right_margin = Cm(2)
+                                section.top_margin = Cm(2)
+                                section.bottom_margin = Cm(2)
+
+                            style = doc.styles['Normal']
+                            font = style.font
+                            font.name = 'Times New Roman'
+                            font.size = Pt(14)
+                            
+                            p_qh = doc.add_paragraph()
+                            p_qh.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            run_qh1 = p_qh.add_run("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM\n")
+                            run_qh1.bold = True
+                            run_qh2 = p_qh.add_run("Độc lập - Tự do - Hạnh phúc")
+                            run_qh2.bold = True
+                            run_qh2.underline = True
+                            
+                            p_title = doc.add_paragraph()
+                            p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            run_title = p_title.add_run(f"\nBÁO CÁO THAM MƯU CHUYÊN MÔN\nMÔN: {chon_mon.upper()} - ĐỢT: {chon_lan.upper()}")
+                            run_title.bold = True
+                            
+                            cac_dong = noi_dung.split('\n')
+                            for dong in cac_dong:
+                                if dong.strip() != "": 
+                                    p = doc.add_paragraph(dong)
+                                    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY 
+                                    p.paragraph_format.space_after = Pt(6) 
+                                    p.paragraph_format.line_spacing = 1.2 
+                                    
+                            buffer_word = io.BytesIO()
+                            doc.save(buffer_word)
+                            buffer_word.seek(0)
+                            return buffer_word
+                        
+                        file_word_san_sang = tao_file_word(st.session_state.ai_ket_qua)
+                        st.download_button(
+                            label="📄 Tải Báo cáo Word (.docx)",
+                            data=file_word_san_sang,
+                            file_name=f"Bao_Cao_Tham_Muu_AI_{chon_mon}_{chon_lan}.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            use_container_width=True
+                        )
