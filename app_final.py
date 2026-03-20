@@ -140,7 +140,7 @@ def load_and_transform_data(url):
     except Exception as e:
         return None, f"🛑 Lỗi đọc dữ liệu: {e}"
 
-# --- HÀM XUẤT GOOGLE SHEETS ---
+# -# --- HÀM XUẤT GOOGLE SHEETS ---
 def ghi_ket_qua_len_sheet(df_ket_qua, link_sheet, ten_sheet_dich="Bao_Cao_AI"):
     try:
         import json
@@ -158,7 +158,11 @@ def ghi_ket_qua_len_sheet(df_ket_qua, link_sheet, ten_sheet_dich="Bao_Cao_AI"):
         except: worksheet = sheet_file.add_worksheet(title=ten_sheet_dich, rows="100", cols="20")
             
         worksheet.clear()
-        du_lieu_ghi = [df_ket_qua.columns.values.tolist()] + df_ket_qua.values.tolist()
+        
+        # --- CHÌA KHÓA PHÁ BẪY LỖI NAN Ở ĐÂY ---
+        df_safe = df_ket_qua.fillna("") # Thay thế toàn bộ lỗi NaN thành ô trống để Google hiểu được
+        
+        du_lieu_ghi = [df_safe.columns.values.tolist()] + df_safe.values.tolist()
         worksheet.update(du_lieu_ghi)
         return True, f"✅ Đã xuất báo cáo thành công sang Sheet: '{ten_sheet_dich}'!"
     except Exception as e:
