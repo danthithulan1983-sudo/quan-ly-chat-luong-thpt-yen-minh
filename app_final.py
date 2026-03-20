@@ -10,6 +10,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 import docx
 from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+import re
 
 # Cấu hình tab trình duyệt
 st.set_page_config(page_title="Quản trị KHTN 2026 - THPT Yên Minh", page_icon="📝", layout="wide")
@@ -44,48 +45,48 @@ def load_and_transform_data(url):
         export_url = f"https://docs.google.com/spreadsheets/d/{file_id}/gviz/tq?tqx=out:csv"
         df_raw = pd.read_csv(export_url, header=None)
         
-        # TRUY TÌM CHÍNH XÁC DÒNG "LẦN THI" VÀ DÒNG "MÔN HỌC"
-        idx_lan = -1
+        # 1. TRUY TÌM CHÍNH XÁC DÒNG TIÊU ĐỀ THEO MẪU SỞ
         idx_mon = -1
         for i in range(min(10, len(df_raw))):
             row_str = " ".join([str(x).lower() for x in df_raw.iloc[i].values])
-            if "lần" in row_str or "đợt" in row_str:
-                idx_lan = i
-            if "toán" in row_str or "ngữ" in row_str or "vật" in row_str or "hóa" in row_str or "sinh" in row_str:
+            if "toán" in row_str and ("văn" in row_str or "ngữ" in row_str) and ("lớp" in row_str or "lop" in row_str):
                 idx_mon = i
+                break
                 
-        if idx_lan == -1: idx_lan = 0
         if idx_mon == -1: idx_mon = 1
+        idx_lan = idx_mon - 1 if idx_mon > 0 else 0
         
         row_lan = df_raw.iloc[idx_lan].copy()
         row_mon = df_raw.iloc[idx_mon].copy()
         
-        # LẤP ĐẦY TRỘN Ô ĐỂ MÁY TÍNH HIỂU
-        for i in range(len(row_lan)):
-            val = str(row_lan.iloc[i]).strip()
-            if val == "" or val.lower() == "nan" or val.lower() == "none" or "unnamed" in val.lower():
-                row_lan.iloc[i] = None
-        row_lan = row_lan.ffill() 
-        
-        # GỘP TIÊU ĐỀ
+        # 2. RADAR NHẬN DIỆN LẦN THI ĐỘNG
+        active_lan = "Lần 1"
         new_cols = []
-        for c_lan, c_mon in zip(row_lan, row_mon):
-            lan = str(c_lan).strip() if pd.notna(c_lan) else ""
-            mon = str(c_mon).strip() if pd.notna(c_mon) else ""
+        
+        cot_co_dinh = ['tt', 'stt', 'sbd', 'họ tên', 'ngày sinh', 'lớp', 'trường', 'ghi chú', 'họ và tên', 'họ_và_tên', 'ngày_tháng_năm_sinh', 'lop', 'ten_hoc_sinh', 'phòng thi', 'phòng', 'mã hs']
+        
+        for i in range(len(row_mon)):
+            c_lan = str(row_lan.iloc[i]).strip() if pd.notna(row_lan.iloc[i]) else ""
+            c_mon = str(row_mon.iloc[i]).strip() if pd.notna(row_mon.iloc[i]) else ""
             
-            if lan.lower() == "nan" or lan.lower() == "none" or "unnamed" in lan.lower(): lan = ""
-            if mon.lower() == "nan" or mon.lower() == "none" or "unnamed" in mon.lower(): mon = ""
-            
-            if mon == "":
-                if "lần" in lan.lower() or "đợt" in lan.lower(): new_cols.append("CỘT_RÁC")
-                else: new_cols.append(lan)
-            elif lan == "" or ("lần" not in lan.lower() and "đợt" not in lan.lower()):
-                new_cols.append(mon)
-            else:
-                new_cols.append(f"{mon}|{lan}")
+            match = re.search(r'(lần\s*\d+|đợt\s*\d+)', c_lan, re.IGNORECASE)
+            if match:
+                active_lan = match.group(1).title()
                 
-        # DỌN CỘT RÁC
-        start_data_idx = max(idx_lan, idx_mon) + 1
+            if c_mon.lower() in ["nan", "none", "unnamed", ""]: 
+                c_mon = ""
+                
+            c_mon_lower = c_mon.lower()
+            
+            if c_mon_lower in cot_co_dinh:
+                new_cols.append(c_mon)
+            elif c_mon != "":
+                new_cols.append(f"{c_mon}|{active_lan}")
+            else:
+                new_cols.append("CỘT_RÁC")
+                
+        # 3. CẮT BỎ TIÊU ĐỀ CŨ VÀ DỌN SẠCH CỘT RÁC
+        start_data_idx = idx_mon + 1
         df_ngang = df_raw.iloc[start_data_idx:].reset_index(drop=True)
         df_ngang.columns = new_cols
         
@@ -93,11 +94,11 @@ def load_and_transform_data(url):
         df_ngang = df_ngang.loc[:, mask_not_rac]
         df_ngang = df_ngang.loc[:, ~df_ngang.columns.duplicated()]
         
-        # ÉP DỌC DỮ LIỆU
-        cac_cot_co_dinh = [c for c in df_ngang.columns if '|' not in c]
+        # 4. ÉP DỌC DỮ LIỆU CHUYÊN NGHIỆP
+        cac_cot_thong_tin = [c for c in df_ngang.columns if '|' not in c]
         cac_cot_diem = [c for c in df_ngang.columns if '|' in c]
         
-        df_doc = pd.melt(df_ngang, id_vars=cac_cot_co_dinh, value_vars=cac_cot_diem, 
+        df_doc = pd.melt(df_ngang, id_vars=cac_cot_thong_tin, value_vars=cac_cot_diem, 
                          var_name='_VAR_AI_', value_name='_VAL_AI_')
         
         split_cols = df_doc['_VAR_AI_'].str.split('|', n=1, expand=True)
@@ -105,7 +106,7 @@ def load_and_transform_data(url):
         df_doc['Lan_Thi'] = split_cols[1]
         df_doc['Diem_Thi'] = df_doc['_VAL_AI_']
             
-        # ĐỔI TÊN CỘT CHUẨN XÁC
+        # 5. CHUẨN HÓA TÊN CỘT ĐỂ KHÔNG BAO GIỜ LỖI
         rename_dict = {}
         has_ten = False
         has_lop = False
@@ -122,8 +123,14 @@ def load_and_transform_data(url):
         if 'Lop' not in df_doc.columns: df_doc['Lop'] = "Khối Chung"
         if 'Ten_Hoc_Sinh' not in df_doc.columns: df_doc['Ten_Hoc_Sinh'] = "Chưa rõ"
             
-        # RÚT TRÍCH VÀ LÀM SẠCH SỐ LIỆU
+        # 6. RÚT TRÍCH VÀ LÀM SẠCH ĐIỂM SỐ
         df_clean = df_doc[['Ten_Hoc_Sinh', 'Lop', 'Mon_Hoc', 'Lan_Thi', 'Diem_Thi']].copy()
+        
+        # --- FIX TYPEERROR: Ép cột Lớp thành chuỗi Text và thay thế ô trống ---
+        df_clean['Lop'] = df_clean['Lop'].fillna("Chưa rõ Lớp").astype(str)
+        df_clean['Lop'] = df_clean['Lop'].replace('nan', 'Chưa rõ Lớp')
+        df_clean['Lop'] = df_clean['Lop'].replace('', 'Chưa rõ Lớp')
+        
         df_clean = df_clean.dropna(subset=['Diem_Thi', 'Mon_Hoc', 'Lan_Thi'])
         df_clean['Diem_Thi'] = df_clean['Diem_Thi'].astype(str).str.replace(',', '.')
         df_clean['Diem_Thi'] = pd.to_numeric(df_clean['Diem_Thi'], errors='coerce')
@@ -172,7 +179,7 @@ with st.sidebar:
     gsheet_url = st.text_input("🔗 Dán link Google Sheet:")
 
 # ==========================================
-# 3. LUỒNG PHÂN TÍCH CHÍNH
+# 3. LUỒNG PHÂN TÍCH CHÍNH & TAB BÁO CÁO
 # ==========================================
 if gsheet_url:
     df_doc, err = load_and_transform_data(gsheet_url)
@@ -191,7 +198,7 @@ if gsheet_url:
         
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # --- TẠO 4 TAB PHÂN TÍCH CHUYÊN SÂU ---
+        # --- 4 TAB PHÂN TÍCH CHUYÊN SÂU ---
         tab1, tab2, tab3, tab4 = st.tabs(["📊 1. TỔNG QUAN CHUNG", "📈 2. TIẾN TRÌNH 1 MÔN", "🔎 3. PHÂN TÍCH SÂU 1 MÔN", "🏆 4. BẢNG TỔNG HỢP TOÀN DIỆN"])
         
         # ---------------------------------------------------------------------
@@ -264,6 +271,7 @@ if gsheet_url:
                 bang_pho_diem = pd.concat([bang_pho_diem, dong_toan_khoi_pd])
                 
                 bao_cao_list = []
+                # Đã an toàn tuyệt đối nhờ ép kiểu ở hàm load_data
                 for lop in sorted(df_hien_tai['Lop'].unique()):
                     lop_data = df_hien_tai[df_hien_tai['Lop'] == lop]
                     bao_cao_list.append({
@@ -297,6 +305,26 @@ if gsheet_url:
                             if thanh_cong: st.success(msg)
                             else: st.error(msg)
                         else: st.warning("🔒 Vui lòng đăng nhập quyền Quản trị!")
+                with c_btn3:
+                    if st.button("🤖 AI Tham mưu Báo cáo", type="primary", use_container_width=True):
+                        if is_admin:
+                            with st.spinner("Đang phân tích phổ điểm..."):
+                                try:
+                                    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+                                    cac_model = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                                    model = genai.GenerativeModel(next((m for m in cac_model if 'flash' in m), cac_model[0]))
+                                    prompt = f"""
+                                    Phân tích kết quả môn {chon_mon} đợt {chon_lan}. Bảng điểm chi tiết:
+                                    {df_tong_hop.to_string(index=False)}
+                                    Viết báo cáo đánh giá sự chênh lệch giữa các lớp, nhận diện lớp yếu kém, điểm liệt và đề xuất giải pháp.
+                                    """
+                                    st.session_state.ai_ket_qua = model.generate_content(prompt).text
+                                except Exception as e: st.error(f"Lỗi AI: {e}")
+                        else: st.warning("🔒 Cần quyền Quản trị để dùng AI!")
+                        
+                if "ai_ket_qua" in st.session_state and st.session_state.ai_ket_qua != "":
+                    st.markdown("#### 📝 Văn bản Tham mưu")
+                    st.text_area("Khung Soạn thảo:", value=st.session_state.ai_ket_qua, height=300)
 
         # ---------------------------------------------------------------------
         # TAB 4: BẢNG TỔNG HỢP TOÀN DIỆN (TẤT CẢ CÁC MÔN & SO SÁNH)
@@ -311,7 +339,6 @@ if gsheet_url:
             
             df_2lan = df_doc[df_doc['Lan_Thi'].isin([lan_truoc, lan_sau])]
             
-            # Xây dựng ma trận tổng hợp
             danh_sach_lop = sorted(df_doc['Lop'].unique())
             danh_sach_lop.append("⭐ TOÀN KHỐI")
             
@@ -319,7 +346,6 @@ if gsheet_url:
             for lop in danh_sach_lop:
                 df_lop = df_2lan if lop == "⭐ TOÀN KHỐI" else df_2lan[df_2lan['Lop'] == lop]
                 
-                # Điểm TB Chung của Lớp đó (Tất cả các môn)
                 tb_truoc = df_lop[df_lop['Lan_Thi'] == lan_truoc]['Diem_Thi'].mean()
                 tb_sau = df_lop[df_lop['Lan_Thi'] == lan_sau]['Diem_Thi'].mean()
                 
@@ -329,7 +355,6 @@ if gsheet_url:
                     '+/- Chung': round(tb_sau - tb_truoc, 2) if pd.notna(tb_sau) and pd.notna(tb_truoc) else None
                 }
                 
-                # Quét điểm TB của từng Môn học
                 for mon in ds_mon:
                     df_mon = df_lop[df_lop['Mon_Hoc'] == mon]
                     m_truoc = df_mon[df_mon['Lan_Thi'] == lan_truoc]['Diem_Thi'].mean()
@@ -341,16 +366,12 @@ if gsheet_url:
                 du_lieu_bang.append(row)
                 
             df_tong_hop_all = pd.DataFrame(du_lieu_bang)
-            
-            # Đẩy Toàn khối xuống cuối và xếp hạng các Lớp theo TB Chung giảm dần
             df_chi_tiet = df_tong_hop_all[df_tong_hop_all['Lớp'] != "⭐ TOÀN KHỐI"].sort_values(by='TB Chung', ascending=False)
             df_toan_khoi = df_tong_hop_all[df_tong_hop_all['Lớp'] == "⭐ TOÀN KHỐI"]
             df_tong_hop_all = pd.concat([df_chi_tiet, df_toan_khoi]).reset_index(drop=True)
             
-            # Hiển thị bảng siêu to
             st.dataframe(df_tong_hop_all, use_container_width=True, hide_index=True)
             
-            # Nút xuất Excel & Sheet cho Bảng Tổng Hợp
             c_x1, c_x2 = st.columns(2)
             with c_x1:
                 buffer_all = io.BytesIO()
