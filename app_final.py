@@ -60,7 +60,6 @@ def load_and_transform_data(url):
         
         active_lan = "Lần 1"
         new_cols = []
-        cot_co_dinh = ['tt', 'stt', 'sbd', 'họ tên', 'ngày sinh', 'lớp', 'trường', 'ghi chú', 'họ và tên', 'họ_và_tên', 'ngày_tháng_năm_sinh', 'lop', 'ten_hoc_sinh', 'phòng thi', 'phòng', 'mã hs']
         
         for i in range(len(row_mon)):
             c_lan = str(row_lan.iloc[i]).strip() if pd.notna(row_lan.iloc[i]) else ""
@@ -72,7 +71,19 @@ def load_and_transform_data(url):
             if c_mon.lower() in ["nan", "none", "unnamed", ""]: c_mon = ""
             c_mon_lower = c_mon.lower()
             
-            if c_mon_lower in cot_co_dinh: new_cols.append(c_mon)
+            # --- TỪ ĐIỂN CỘT CỐ ĐỊNH THÔNG MINH (Bao gồm cả thông tin Điểm TB & Ưu tiên) ---
+            is_fixed = False
+            if c_mon_lower in ['tt', 'stt', 'sbd', 'họ tên', 'ngày sinh', 'lớp', 'trường', 'ghi chú', 'họ và tên', 'họ_và_tên', 'ngày_tháng_năm_sinh', 'lop', 'ten_hoc_sinh', 'phòng thi', 'phòng', 'mã hs']:
+                is_fixed = True
+            elif any(k in c_mon_lower for k in ['lớp 10', 'tb 10', 'đtb 10', 'tb10']): is_fixed = True
+            elif any(k in c_mon_lower for k in ['lớp 11', 'tb 11', 'đtb 11', 'tb11']): is_fixed = True
+            elif any(k in c_mon_lower for k in ['lớp 12', 'tb 12', 'đtb 12', 'tb12']): is_fixed = True
+            elif any(k in c_mon_lower for k in ['ưu tiên', 'uu tien', 'điểm ut']): is_fixed = True
+            elif c_mon_lower == 'ut': is_fixed = True
+            elif any(k in c_mon_lower for k in ['khuyến khích', 'khuyen khich', 'điểm kk']): is_fixed = True
+            elif c_mon_lower == 'kk': is_fixed = True
+            
+            if is_fixed: new_cols.append(c_mon)
             elif c_mon != "": new_cols.append(f"{c_mon}|{active_lan}")
             else: new_cols.append("CỘT_RÁC")
                 
@@ -94,23 +105,40 @@ def load_and_transform_data(url):
         df_doc['Lan_Thi'] = split_cols[1]
         df_doc['Diem_Thi'] = df_doc['_VAL_AI_']
             
+        # ĐỔI TÊN CHUẨN ĐỂ MÁY TÍNH XỬ LÝ
         rename_dict = {}
         has_ten = False
         has_lop = False
         for col in df_doc.columns:
             cl = str(col).lower().replace("_", " ").strip()
-            if not has_ten and ('tên' in cl or 'ten' in cl):
+            if not has_ten and ('tên' in cl or 'ten' in cl) and 'ưu tiên' not in cl:
                 rename_dict[col] = 'Ten_Hoc_Sinh'
                 has_ten = True
-            elif not has_lop and ('lớp' in cl or 'lop' in cl):
+            elif not has_lop and ('lớp' in cl or 'lop' in cl) and not any(x in cl for x in ['10', '11', '12']):
                 rename_dict[col] = 'Lop'
                 has_lop = True
+            elif '10' in cl and any(x in cl for x in ['tb', 'lớp', 'điểm', 'đtb']): rename_dict[col] = 'TB_10'
+            elif '11' in cl and any(x in cl for x in ['tb', 'lớp', 'điểm', 'đtb']): rename_dict[col] = 'TB_11'
+            elif '12' in cl and any(x in cl for x in ['tb', 'lớp', 'điểm', 'đtb']): rename_dict[col] = 'TB_12'
+            elif 'ưu tiên' in cl or 'uu tien' in cl or cl == 'ut' or 'điểm ut' in cl: rename_dict[col] = 'Diem_UT'
+            elif 'khuyến khích' in cl or 'khuyen khich' in cl or cl == 'kk' or 'điểm kk' in cl: rename_dict[col] = 'Diem_KK'
         
         df_doc = df_doc.rename(columns=rename_dict)
         if 'Lop' not in df_doc.columns: df_doc['Lop'] = "Khối Chung"
         if 'Ten_Hoc_Sinh' not in df_doc.columns: df_doc['Ten_Hoc_Sinh'] = "Chưa rõ"
             
-        df_clean = df_doc[['Ten_Hoc_Sinh', 'Lop', 'Mon_Hoc', 'Lan_Thi', 'Diem_Thi']].copy()
+        cols_to_keep = ['Ten_Hoc_Sinh', 'Lop', 'Mon_Hoc', 'Lan_Thi', 'Diem_Thi']
+        for ext in ['TB_10', 'TB_11', 'TB_12', 'Diem_UT', 'Diem_KK']:
+            if ext in df_doc.columns: cols_to_keep.append(ext)
+            
+        df_clean = df_doc[cols_to_keep].copy()
+        
+        # Làm sạch số liệu (Đổi dấu phẩy thành dấu chấm cho các cột thông tin)
+        for col in ['TB_10', 'TB_11', 'TB_12', 'Diem_UT', 'Diem_KK']:
+            if col in df_clean.columns:
+                df_clean[col] = df_clean[col].astype(str).str.replace(',', '.')
+                df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce')
+
         df_clean['Lop'] = df_clean['Lop'].fillna("Chưa rõ Lớp").astype(str)
         df_clean['Lop'] = df_clean['Lop'].replace('nan', 'Chưa rõ Lớp')
         df_clean['Lop'] = df_clean['Lop'].replace('', 'Chưa rõ Lớp')
@@ -271,42 +299,55 @@ if gsheet_url:
             st.dataframe(df_tong_hop_all, use_container_width=True, hide_index=True)
 
         # ---------------------------------------------------------------------
-        # TAB 5: XÉT TỐT NGHIỆP THPT CHUẨN THÔNG TƯ 24/2024 & ĐẠI HỌC
+        # TAB 5: XÉT TỐT NGHIỆP THPT (CÁ NHÂN HÓA 100% THEO FILE) & ĐẠI HỌC
         # ---------------------------------------------------------------------
         with tab5:
-            st.markdown("#### 🎓 CÔNG CỤ GIẢ LẬP XÉT TỐT NGHIỆP 2026 (Chuẩn TT 24/2024/TT-BGDĐT)")
+            st.markdown("#### 🎓 HỆ THỐNG XÉT TỐT NGHIỆP VÀ ĐẠI HỌC 2026")
             st.info("""
-            💡 **Công thức xét Tốt nghiệp:** **ĐXTN** = [ ((Tổng điểm 4 bài thi + Điểm Khuyến khích) / 4) + Điểm TB các năm học ] / 2 + Điểm Ưu tiên
-            *(Trong đó: Điểm TB các năm học = (ĐTB Lớp 10 × 1 + ĐTB Lớp 11 × 2 + ĐTB Lớp 12 × 3) / 6)*
+            💡 Hệ thống ưu tiên đọc **ĐTB Lớp 10, Lớp 11, Lớp 12, Điểm UT, Điểm KK** từ file dữ liệu. Nếu cột nào bị trống/không có, hệ thống sẽ sử dụng các giá trị nhập sẵn dưới đây để giả lập.
             """)
             
             c_lan_tab5, c_t10, c_t11, c_t12, c_ut, c_kk = st.columns([1.5, 1, 1, 1, 1, 1])
             with c_lan_tab5: lan_tab5 = st.selectbox("Chọn Đợt thi giả lập:", ds_lan_thi, key='lan_tab5')
-            with c_t10: tb_lop10 = st.number_input("🎯 ĐTB Lớp 10:", value=7.0, step=0.1)
-            with c_t11: tb_lop11 = st.number_input("🎯 ĐTB Lớp 11:", value=7.0, step=0.1)
-            with c_t12: tb_lop12 = st.number_input("🎯 ĐTB Lớp 12:", value=7.0, step=0.1)
-            with c_ut: diem_ut = st.number_input("⭐ Ưu tiên (UT):", value=0.0, step=0.25)
-            with c_kk: diem_kk = st.number_input("🌟 K.Khích (KK):", value=0.0, step=0.5)
+            with c_t10: tb_lop10_mac_dinh = st.number_input("🎯 ĐTB Lớp 10 (Chung):", value=7.0, step=0.1)
+            with c_t11: tb_lop11_mac_dinh = st.number_input("🎯 ĐTB Lớp 11 (Chung):", value=7.0, step=0.1)
+            with c_t12: tb_lop12_mac_dinh = st.number_input("🎯 ĐTB Lớp 12 (Chung):", value=7.0, step=0.1)
+            with c_ut: uu_tien_mac_dinh = st.number_input("⭐ Điểm UT (Chung):", value=0.0, step=0.25)
+            with c_kk: kkhich_mac_dinh = st.number_input("🌟 Điểm KK (Chung):", value=0.0, step=0.5)
             
             df_dot = df_doc[df_doc['Lan_Thi'] == lan_tab5]
             
-            df_wide = df_dot.pivot_table(index=['Ten_Hoc_Sinh', 'Lop'], columns='Mon_Hoc', values='Diem_Thi').reset_index()
-            mon_cols = [c for c in df_wide.columns if c not in ['Ten_Hoc_Sinh', 'Lop']]
+            index_cols = ['Ten_Hoc_Sinh', 'Lop']
+            # Gom toàn bộ các cột thông tin cá nhân hiện có đưa vào hiển thị
+            cac_cot_thong_tin_co = [c for c in ['TB_10', 'TB_11', 'TB_12', 'Diem_UT', 'Diem_KK'] if c in df_dot.columns]
+            index_cols.extend(cac_cot_thong_tin_co)
             
-            # --- CHỮA LỖI VÀ TÍNH TOÁN THEO ĐÚNG CÔNG THỨC 24/2024 ---
+            df_wide = df_dot.pivot_table(index=index_cols, columns='Mon_Hoc', values='Diem_Thi').reset_index()
+            mon_cols = [c for c in df_wide.columns if c not in index_cols]
             
-            # 1. Tính ĐTB các năm học (Hệ số 1-2-3)
-            dtb_cac_nam = (tb_lop10 * 1 + tb_lop11 * 2 + tb_lop12 * 3) / 6
+            # --- TỰ ĐỘNG BÙ ĐẮP DỮ LIỆU ---
+            # Nếu file Excel CÓ cột -> Ưu tiên dùng điểm trong file. Nếu file KHÔNG CÓ -> Dùng điểm trên bảng Điều khiển.
+            if 'TB_10' in df_wide.columns: df_wide['TB_10_Thuc'] = df_wide['TB_10'].fillna(tb_lop10_mac_dinh)
+            else: df_wide['TB_10_Thuc'] = tb_lop10_mac_dinh
             
-            # 2. Tính Tổng điểm 4 bài thi và Điểm liệt
-            # Dùng hàm sum() để lấy Tổng chính xác 4 môn thi mà học sinh đã làm
+            if 'TB_11' in df_wide.columns: df_wide['TB_11_Thuc'] = df_wide['TB_11'].fillna(tb_lop11_mac_dinh)
+            else: df_wide['TB_11_Thuc'] = tb_lop11_mac_dinh
+            
+            if 'TB_12' in df_wide.columns: df_wide['TB_12_Thuc'] = df_wide['TB_12'].fillna(tb_lop12_mac_dinh)
+            else: df_wide['TB_12_Thuc'] = tb_lop12_mac_dinh
+            
+            if 'Diem_UT' in df_wide.columns: df_wide['UT_Thuc'] = df_wide['Diem_UT'].fillna(uu_tien_mac_dinh)
+            else: df_wide['UT_Thuc'] = uu_tien_mac_dinh
+            
+            if 'Diem_KK' in df_wide.columns: df_wide['KK_Thuc'] = df_wide['Diem_KK'].fillna(kkhich_mac_dinh)
+            else: df_wide['KK_Thuc'] = kkhich_mac_dinh
+
+            # --- TÍNH TOÁN THEO CÔNG THỨC 24/2024 VỚI ĐIỂM CÁ NHÂN ---
+            dtb_cac_nam = (df_wide['TB_10_Thuc'] * 1 + df_wide['TB_11_Thuc'] * 2 + df_wide['TB_12_Thuc'] * 3) / 6
             df_wide['Tổng 4 Môn'] = df_wide[mon_cols].sum(axis=1)
             df_wide['Điểm Liệt'] = df_wide[mon_cols].min(axis=1)
             
-            # 3. ÉP CHUẨN CÔNG THỨC: Điểm KK cộng vào Tổng 4 môn, Điểm UT cộng vòng ngoài
-            df_wide['Điểm Xét TN'] = ((((df_wide['Tổng 4 Môn'] + diem_kk) / 4) + dtb_cac_nam) / 2 + diem_ut).round(2)
-            
-            # 4. Nhận diện ĐỖ / TRƯỢT (Không có môn nào bị <= 1.0)
+            df_wide['Điểm Xét TN'] = ((((df_wide['Tổng 4 Môn'] + df_wide['KK_Thuc']) / 4) + dtb_cac_nam) / 2 + df_wide['UT_Thuc']).round(2)
             df_wide['Kết quả TN'] = df_wide.apply(lambda row: "ĐỖ ✅" if row['Điểm Xét TN'] >= 5.0 and row['Điểm Liệt'] > 1.0 else "TRƯỢT ❌", axis=1)
             
             # --- TÍNH CÁC KHỐI ĐẠI HỌC ---
@@ -329,22 +370,9 @@ if gsheet_url:
             }
             
             ds_to_hop = {
-                'A00': ['Toán', 'Lý', 'Hóa'], 'A01': ['Toán', 'Lý', 'Anh'], 'A02': ['Toán', 'Lý', 'Sinh'],
-                'A03': ['Toán', 'Lý', 'Sử'], 'A04': ['Toán', 'Lý', 'Địa'], 'A05': ['Toán', 'Hóa', 'Sử'],
-                'A06': ['Toán', 'Hóa', 'Địa'], 'A07': ['Toán', 'Sử', 'Địa'], 'A08': ['Toán', 'Sử', 'KTPL'],
-                'A09': ['Toán', 'Địa', 'KTPL'], 'A10': ['Toán', 'Lý', 'KTPL'], 'A11': ['Toán', 'Hóa', 'KTPL'],
-                'B00': ['Toán', 'Hóa', 'Sinh'], 'B02': ['Toán', 'Sinh', 'Địa'], 'B03': ['Toán', 'Sinh', 'Sử'], 'B08': ['Toán', 'Sinh', 'Anh'],
-                'C00': ['Văn', 'Sử', 'Địa'], 'C01': ['Toán', 'Văn', 'Lý'], 'C02': ['Toán', 'Văn', 'Hóa'],
-                'C03': ['Toán', 'Văn', 'Sử'], 'C04': ['Toán', 'Văn', 'Địa'], 'C05': ['Văn', 'Lý', 'Hóa'],
-                'C06': ['Văn', 'Lý', 'Sinh'], 'C07': ['Văn', 'Lý', 'Sử'], 'C08': ['Văn', 'Hóa', 'Sinh'],
-                'C09': ['Văn', 'Lý', 'Địa'], 'C10': ['Văn', 'Hóa', 'Sử'], 'C11': ['Văn', 'Hóa', 'Địa'],
-                'C12': ['Văn', 'Sinh', 'Sử'], 'C13': ['Văn', 'Sinh', 'Địa'], 'C14': ['Toán', 'Văn', 'KTPL'],
-                'C16': ['Văn', 'Lý', 'KTPL'], 'C17': ['Văn', 'Hóa', 'KTPL'], 'C18': ['Văn', 'Sinh', 'KTPL'],
-                'C19': ['Văn', 'Sử', 'KTPL'], 'C20': ['Văn', 'Địa', 'KTPL'],
-                'D01': ['Toán', 'Văn', 'Anh'], 'D07': ['Toán', 'Hóa', 'Anh'], 'D08': ['Toán', 'Sinh', 'Anh'],
-                'D09': ['Toán', 'Sử', 'Anh'], 'D10': ['Toán', 'Địa', 'Anh'], 'D11': ['Văn', 'Lý', 'Anh'],
-                'D12': ['Văn', 'Hóa', 'Anh'], 'D13': ['Văn', 'Sinh', 'Anh'], 'D14': ['Văn', 'Sử', 'Anh'],
-                'D15': ['Văn', 'Địa', 'Anh']
+                'A00': ['Toán', 'Lý', 'Hóa'], 'A01': ['Toán', 'Lý', 'Anh'], 'B00': ['Toán', 'Hóa', 'Sinh'], 
+                'C00': ['Văn', 'Sử', 'Địa'], 'C14': ['Toán', 'Văn', 'KTPL'], 'C19': ['Văn', 'Sử', 'KTPL'],
+                'C20': ['Văn', 'Địa', 'KTPL'], 'D01': ['Toán', 'Văn', 'Anh'], 'D07': ['Toán', 'Hóa', 'Anh']
             }
             
             to_hop_hien_co = []
@@ -356,15 +384,11 @@ if gsheet_url:
                     to_hop_hien_co.append(ten_cot_moi)
             
             khoi_truyen_thong = [k for k in to_hop_hien_co if any(x in k for x in ["A00", "A01", "B00", "C00", "D01"])]
-            
             st.markdown("---")
-            chon_to_hop = st.multiselect(
-                "📌 CHỌN TỔ HỢP XÉT ĐẠI HỌC CẦN XEM:", 
-                options=to_hop_hien_co, 
-                default=khoi_truyen_thong
-            )
+            chon_to_hop = st.multiselect("📌 CHỌN TỔ HỢP ĐẠI HỌC MUỐN XEM:", options=to_hop_hien_co, default=khoi_truyen_thong)
             
-            cols_to_show = ['Ten_Hoc_Sinh', 'Lop'] + mon_cols + ['Tổng 4 Môn', 'Điểm Xét TN', 'Kết quả TN'] + chon_to_hop
+            # Gộp các cột thông tin gốc đã nhận diện được hiển thị ra màn hình
+            cols_to_show = ['Ten_Hoc_Sinh', 'Lop'] + cac_cot_thong_tin_co + mon_cols + ['Tổng 4 Môn', 'Điểm Xét TN', 'Kết quả TN'] + chon_to_hop
             df_wide_show = df_wide[cols_to_show]
             
             st.dataframe(df_wide_show, use_container_width=True, hide_index=True)
@@ -373,12 +397,12 @@ if gsheet_url:
             with c_x1:
                 buffer_5 = io.BytesIO()
                 with pd.ExcelWriter(buffer_5, engine='xlsxwriter') as writer:
-                    df_wide.drop(columns=['Điểm Liệt']).to_excel(writer, sheet_name='Xet_Tuyen_Full', index=False)
-                st.download_button("💾 Tải Bảng Điểm Xét Tốt Nghiệp & Đại Học", data=buffer_5.getvalue(), file_name=f"Xet_TN_DH_{lan_tab5}.xlsx", mime="application/vnd.ms-excel", use_container_width=True)
+                    df_wide_show.to_excel(writer, sheet_name='Xet_Tuyen', index=False)
+                st.download_button("💾 Tải Bảng Xét Tốt Nghiệp", data=buffer_5.getvalue(), file_name=f"Xet_TN_{lan_tab5}.xlsx", mime="application/vnd.ms-excel", use_container_width=True)
             with c_x2:
                 if st.button("🚀 XUẤT LÊN GOOGLE SHEETS", type="primary", use_container_width=True, key='btn_g5'):
                     if is_admin:
-                        thanh_cong, msg = ghi_ket_qua_len_sheet(df_wide.drop(columns=['Điểm Liệt']), gsheet_url, f"Xét TN & ĐH - {lan_tab5}")
+                        thanh_cong, msg = ghi_ket_qua_len_sheet(df_wide_show, gsheet_url, f"Xét TN - {lan_tab5}")
                         if thanh_cong: st.success(msg)
                         else: st.error(msg)
                     else: st.warning("🔒 Vui lòng đăng nhập quyền Quản trị!")
