@@ -209,6 +209,9 @@ if gsheet_url:
         
         tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 1. TỔNG QUAN", "📈 2. TIẾN TRÌNH 1 MÔN", "🔎 3. PHÂN TÍCH LỚP", "🏆 4. BẢNG TỔNG HỢP", "🎓 5. XÉT TN & ĐẠI HỌC"])
         
+        # ---------------------------------------------------------------------
+        # TAB 1: TỔNG QUAN TOÀN KHỐI
+        # ---------------------------------------------------------------------
         with tab1:
             st.markdown("#### 🌟 Biến động Điểm Trung bình Chung qua các Đợt thi")
             tb_khoi_cac_lan = df_doc.groupby('Lan_Thi')['Diem_Thi'].mean().reset_index()
@@ -220,7 +223,21 @@ if gsheet_url:
             fig_chung.add_trace(go.Scatter(x=tb_khoi_cac_lan['Lan_Thi'], y=tb_khoi_cac_lan['Điểm TB Chung'], mode='lines+markers+text', name='Thực tế', text=tb_khoi_cac_lan['Điểm TB Chung'], textposition='top center', line=dict(color='blue', width=3), marker=dict(size=10)))
             fig_chung.add_trace(go.Scatter(x=tb_khoi_cac_lan['Lan_Thi'], y=tb_khoi_cac_lan['Chỉ tiêu Giao'], mode='lines', name='Chỉ tiêu', line=dict(color='red', width=2, dash='dash')))
             st.plotly_chart(fig_chung, use_container_width=True)
+            
+            df_t1 = tb_khoi_cac_lan[['Lan_Thi', 'Điểm TB Chung', 'Chỉ tiêu Giao', 'Chênh lệch']]
+            st.dataframe(df_t1, use_container_width=True, hide_index=True)
+            
+            # --- PHỤC HỒI NÚT XUẤT CHO TAB 1 ---
+            if st.button("🚀 XUẤT LÊN GOOGLE SHEETS", type="primary", key="btn_g1"):
+                if is_admin:
+                    thanh_cong, msg = ghi_ket_qua_len_sheet(df_t1, gsheet_url, "Tổng quan Chung")
+                    if thanh_cong: st.success(msg)
+                    else: st.error(msg)
+                else: st.warning("🔒 Vui lòng đăng nhập quyền Quản trị!")
 
+        # ---------------------------------------------------------------------
+        # TAB 2: TIẾN TRÌNH BỘ MÔN
+        # ---------------------------------------------------------------------
         with tab2:
             chon_mon_tab2 = st.selectbox("🔍 Chọn Môn học để xem tiến trình:", ds_mon, key='mon_tab2')
             df_mon_tien_trinh = df_doc[df_doc['Mon_Hoc'] == chon_mon_tab2]
@@ -233,7 +250,24 @@ if gsheet_url:
                 fig_mon.add_hline(y=chi_tieu_mon, line_dash="dash", line_color="red", annotation_text="Chỉ tiêu môn")
                 fig_mon.update_traces(textposition='outside')
                 st.plotly_chart(fig_mon, use_container_width=True)
+            with c_bang:
+                st.markdown("<br><br>", unsafe_allow_html=True)
+                tb_mon_cac_lan['Chỉ tiêu Môn'] = chi_tieu_mon
+                tb_mon_cac_lan['Chênh lệch'] = (tb_mon_cac_lan['Điểm TB Môn'] - chi_tieu_mon).round(2)
+                df_t2 = tb_mon_cac_lan[['Lan_Thi', 'Điểm TB Môn', 'Chênh lệch']]
+                st.dataframe(df_t2, hide_index=True)
+                
+                # --- PHỤC HỒI NÚT XUẤT CHO TAB 2 ---
+                if st.button("🚀 XUẤT LÊN GOOGLE SHEETS", type="primary", use_container_width=True, key="btn_g2"):
+                    if is_admin:
+                        thanh_cong, msg = ghi_ket_qua_len_sheet(df_t2, gsheet_url, f"Tiến trình {chon_mon_tab2}")
+                        if thanh_cong: st.success(msg)
+                        else: st.error(msg)
+                    else: st.warning("🔒 Vui lòng đăng nhập quyền Quản trị!")
 
+        # ---------------------------------------------------------------------
+        # TAB 3: PHÂN TÍCH SÂU 1 MÔN (XẾP HẠNG LỚP & AI THAM MƯU)
+        # ---------------------------------------------------------------------
         with tab3:
             cc1, cc2 = st.columns(2)
             with cc1: chon_mon = st.selectbox("Chọn Môn học:", ds_mon, key='mon_tab3')
@@ -245,7 +279,6 @@ if gsheet_url:
                 labels = ['< 3.5', '3.5 - < 5.0', '5.0 - < 7.0', '7.0 - < 8.0', '8.0 - 10']
                 df_hien_tai['Pho_Diem'] = pd.cut(df_hien_tai['Diem_Thi'], bins=bins, labels=labels, right=False)
                 
-                # Sửa lỗi: Lấy danh sách Toàn bộ các lớp của trường để 100% không bị mất lớp nào
                 danh_sach_lop_all = sorted(df_doc['Lop'].unique())
                 bang_pho_diem = pd.crosstab(df_hien_tai['Lop'], df_hien_tai['Pho_Diem']).reindex(index=danh_sach_lop_all, columns=labels, fill_value=0)
                 dong_toan_khoi_pd = pd.DataFrame(bang_pho_diem.sum()).T
@@ -274,6 +307,44 @@ if gsheet_url:
 
                 st.dataframe(df_tong_hop, use_container_width=True, hide_index=True)
 
+                # --- PHỤC HỒI TOÀN BỘ CÁC NÚT CHO TAB 3 (EXCEL, SHEETS, AI) ---
+                c_btn1, c_btn2, c_btn3 = st.columns(3)
+                with c_btn1:
+                    buffer = io.BytesIO()
+                    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                        df_tong_hop.to_excel(writer, sheet_name=f'Bao_Cao', index=False)
+                    st.download_button("💾 Tải file Excel Báo cáo", data=buffer.getvalue(), file_name=f"Bao_Cao_{chon_mon}_{chon_lan}.xlsx", mime="application/vnd.ms-excel", use_container_width=True, key="dl_t3")
+                with c_btn2:
+                    if st.button("🚀 XUẤT LÊN GOOGLE SHEETS", type="primary", use_container_width=True, key="btn_g3"):
+                        if is_admin:
+                            thanh_cong, msg = ghi_ket_qua_len_sheet(df_tong_hop, gsheet_url, f"Báo Cáo {chon_mon} - {chon_lan}")
+                            if thanh_cong: st.success(msg)
+                            else: st.error(msg)
+                        else: st.warning("🔒 Vui lòng đăng nhập quyền Quản trị!")
+                with c_btn3:
+                    if st.button("🤖 AI Tham mưu Báo cáo", type="primary", use_container_width=True, key="btn_ai_t3"):
+                        if is_admin:
+                            with st.spinner("Đang phân tích phổ điểm..."):
+                                try:
+                                    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+                                    cac_model = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                                    model = genai.GenerativeModel(next((m for m in cac_model if 'flash' in m), cac_model[0]))
+                                    prompt = f"""
+                                    Phân tích kết quả môn {chon_mon} đợt {chon_lan}. Bảng điểm chi tiết:
+                                    {df_tong_hop.to_string(index=False)}
+                                    Viết báo cáo đánh giá sự chênh lệch giữa các lớp, nhận diện lớp yếu kém, điểm liệt và đề xuất giải pháp.
+                                    """
+                                    st.session_state.ai_ket_qua = model.generate_content(prompt).text
+                                except Exception as e: st.error(f"Lỗi AI: {e}")
+                        else: st.warning("🔒 Cần quyền Quản trị để dùng AI!")
+                        
+                if "ai_ket_qua" in st.session_state and st.session_state.ai_ket_qua != "":
+                    st.markdown("#### 📝 Văn bản Tham mưu")
+                    st.text_area("Khung Soạn thảo:", value=st.session_state.ai_ket_qua, height=300)
+
+        # ---------------------------------------------------------------------
+        # TAB 4: BẢNG TỔNG HỢP TOÀN DIỆN TẤT CẢ CÁC MÔN
+        # ---------------------------------------------------------------------
         with tab4:
             c_lan1, c_lan2 = st.columns(2)
             with c_lan1: lan_truoc = st.selectbox("So sánh từ:", ds_lan_thi, index=0, key='lan_truoc_t4')
@@ -304,13 +375,28 @@ if gsheet_url:
             df_tong_hop_all = pd.concat([df_chi_tiet, df_toan_khoi]).reset_index(drop=True)
             st.dataframe(df_tong_hop_all, use_container_width=True, hide_index=True)
 
+            # --- PHỤC HỒI NÚT XUẤT CHO TAB 4 ---
+            c_x1, c_x2 = st.columns(2)
+            with c_x1:
+                buffer_all = io.BytesIO()
+                with pd.ExcelWriter(buffer_all, engine='xlsxwriter') as writer:
+                    df_tong_hop_all.to_excel(writer, sheet_name='Tong_Hop', index=False)
+                st.download_button("💾 Tải Excel Bảng Tổng Hợp", data=buffer_all.getvalue(), file_name=f"Tong_Hop_{lan_truoc}_{lan_sau}.xlsx", mime="application/vnd.ms-excel", use_container_width=True, key="dl_t4")
+            with c_x2:
+                if st.button("🚀 XUẤT LÊN GOOGLE SHEETS", type="primary", use_container_width=True, key="btn_g4"):
+                    if is_admin:
+                        thanh_cong, msg = ghi_ket_qua_len_sheet(df_tong_hop_all, gsheet_url, f"Tổng hợp {lan_truoc} - {lan_sau}")
+                        if thanh_cong: st.success(msg)
+                        else: st.error(msg)
+                    else: st.warning("🔒 Vui lòng đăng nhập quyền Quản trị!")
+
         # ---------------------------------------------------------------------
         # TAB 5: XÉT TỐT NGHIỆP THPT (CÁ NHÂN HÓA 100% THEO FILE) & ĐẠI HỌC
         # ---------------------------------------------------------------------
         with tab5:
             st.markdown("#### 🎓 HỆ THỐNG XÉT TỐT NGHIỆP VÀ ĐẠI HỌC 2026")
             st.info("""
-            💡 Nếu file Excel CÓ nhập ĐTB 10, 11, 12, UT, KK: Máy sẽ tính riêng từng học sinh. Nếu bị trống, máy tự bù bằng các số giả lập bên dưới để không một học sinh nào bị loại khỏi bảng.
+            💡 Nếu file Excel CÓ nhập ĐTB 10, 11, 12, UT, KK: Máy sẽ tính riêng từng học sinh. Nếu bị trống, máy tự bù bằng các số giả lập bên dưới.
             """)
             
             c_lan_tab5, c_t10, c_t11, c_t12, c_ut, c_kk = st.columns([1.5, 1, 1, 1, 1, 1])
@@ -323,7 +409,6 @@ if gsheet_url:
             
             df_dot = df_doc[df_doc['Lan_Thi'] == lan_tab5].copy()
             
-            # --- CHÌA KHÓA: Bù dữ liệu trước khi Pivot để Pandas KHÔNG THỂ vứt học sinh ---
             if 'TB_10' in df_dot.columns: df_dot['TB_10_Thuc'] = df_dot['TB_10'].fillna(tb_lop10)
             else: df_dot['TB_10_Thuc'] = tb_lop10
             
@@ -344,7 +429,6 @@ if gsheet_url:
             df_wide = df_dot.pivot_table(index=index_cols, columns='Mon_Hoc', values='Diem_Thi').reset_index()
             mon_cols = [c for c in df_wide.columns if c not in index_cols]
 
-            # Tính toán chuẩn TT 24/2024/TT-BGDĐT
             dtb_cac_nam = (df_wide['TB_10_Thuc'] * 1 + df_wide['TB_11_Thuc'] * 2 + df_wide['TB_12_Thuc'] * 3) / 6
             df_wide['Tổng 4 Môn'] = df_wide[mon_cols].sum(axis=1)
             df_wide['Điểm Liệt'] = df_wide[mon_cols].min(axis=1)
@@ -352,7 +436,6 @@ if gsheet_url:
             df_wide['Điểm Xét TN'] = ((((df_wide['Tổng 4 Môn'] + df_wide['KK_Thuc']) / 4) + dtb_cac_nam) / 2 + df_wide['UT_Thuc']).round(2)
             df_wide['Kết quả TN'] = df_wide.apply(lambda row: "ĐỖ ✅" if row['Điểm Xét TN'] >= 5.0 and row['Điểm Liệt'] > 1.0 else "TRƯỢT ❌", axis=1)
             
-            # --- TÍNH CÁC KHỐI ĐẠI HỌC ---
             def get_col(danh_sach_cot, keywords):
                 for c in danh_sach_cot:
                     for kw in keywords:
@@ -389,20 +472,22 @@ if gsheet_url:
             st.markdown("---")
             chon_to_hop = st.multiselect("📌 CHỌN TỔ HỢP ĐẠI HỌC MUỐN XEM:", options=to_hop_hien_co, default=khoi_truyen_thong)
             
-            # Đổi tên lại cho đẹp trên bảng hiển thị
             df_wide = df_wide.rename(columns={'TB_10_Thuc': 'ĐTB 10', 'TB_11_Thuc': 'ĐTB 11', 'TB_12_Thuc': 'ĐTB 12', 'UT_Thuc': 'UT', 'KK_Thuc': 'KK'})
+            
+            cac_cot_thong_tin_co = [c for c in ['TB_10', 'TB_11', 'TB_12', 'Diem_UT', 'Diem_KK'] if c in df_dot.columns]
             
             cols_to_show = ['Ten_Hoc_Sinh', 'Lop', 'ĐTB 10', 'ĐTB 11', 'ĐTB 12', 'UT', 'KK'] + mon_cols + ['Tổng 4 Môn', 'Điểm Xét TN', 'Kết quả TN'] + chon_to_hop
             df_wide_show = df_wide[cols_to_show]
             
             st.dataframe(df_wide_show, use_container_width=True, hide_index=True)
             
+            # --- TAB 5 BUTTONS ---
             c_x1, c_x2 = st.columns(2)
             with c_x1:
                 buffer_5 = io.BytesIO()
                 with pd.ExcelWriter(buffer_5, engine='xlsxwriter') as writer:
                     df_wide_show.to_excel(writer, sheet_name='Xet_Tuyen', index=False)
-                st.download_button("💾 Tải Bảng Xét Tốt Nghiệp", data=buffer_5.getvalue(), file_name=f"Xet_TN_{lan_tab5}.xlsx", mime="application/vnd.ms-excel", use_container_width=True)
+                st.download_button("💾 Tải Bảng Xét Tốt Nghiệp", data=buffer_5.getvalue(), file_name=f"Xet_TN_{lan_tab5}.xlsx", mime="application/vnd.ms-excel", use_container_width=True, key="dl_t5")
             with c_x2:
                 if st.button("🚀 XUẤT LÊN GOOGLE SHEETS", type="primary", use_container_width=True, key='btn_g5'):
                     if is_admin:
