@@ -280,33 +280,32 @@ if gsheet_url:
             lan_tab5 = st.selectbox("Chọn Đợt thi để xét tuyển:", ds_lan_thi, key='lan_tab5')
             df_dot = df_doc[df_doc['Lan_Thi'] == lan_tab5]
             
-            # Xoay dữ liệu từ dọc sang ngang
             df_wide = df_dot.pivot_table(index=['Ten_Hoc_Sinh', 'Lop'], columns='Mon_Hoc', values='Diem_Thi').reset_index()
+            # CHÌA KHÓA PHÁ BẪY "TypeError": Chỉ quét trong danh sách các môn học, không quét vào Tên và Lớp
             mon_cols = [c for c in df_wide.columns if c not in ['Ten_Hoc_Sinh', 'Lop']]
             
-            # 1. Tính Điểm TB Thi Tốt Nghiệp
             df_wide['TB Tốt Nghiệp'] = df_wide[mon_cols].mean(axis=1).round(2)
             
-            # 2. Radar ánh xạ Tên Môn
-            def get_col(df, keywords):
-                for c in df.columns:
+            # Hàm tìm tên cột môn học SIÊU AN TOÀN
+            def get_col(danh_sach_cot, keywords):
+                for c in danh_sach_cot:
                     for kw in keywords:
                         if kw in str(c).lower(): return c
                 return None
             
+            # Ánh xạ môn chỉ trên danh sách môn thi (mon_cols)
             mon_map = {
-                'Toán': get_col(df_wide, ['toán', 'toan']),
-                'Văn': get_col(df_wide, ['văn', 'ngữ']),
-                'Anh': get_col(df_wide, ['anh', 'ngoại ngữ']),
-                'Lý': get_col(df_wide, ['lý', 'lí', 'vật']),
-                'Hóa': get_col(df_wide, ['hóa', 'hoa']),
-                'Sinh': get_col(df_wide, ['sinh']),
-                'Sử': get_col(df_wide, ['sử', 'lịch']),
-                'Địa': get_col(df_wide, ['địa', 'dia']),
-                'KTPL': get_col(df_wide, ['ktpl', 'gdcd', 'kinh tế', 'pháp luật', 'gdk'])
+                'Toán': get_col(mon_cols, ['toán', 'toan']),
+                'Văn': get_col(mon_cols, ['văn', 'ngữ']),
+                'Anh': get_col(mon_cols, ['anh', 'ngoại ngữ']),
+                'Lý': get_col(mon_cols, ['lý', 'lí', 'vật']),
+                'Hóa': get_col(mon_cols, ['hóa', 'hoa']),
+                'Sinh': get_col(mon_cols, ['sinh']),
+                'Sử': get_col(mon_cols, ['sử', 'lịch']),
+                'Địa': get_col(mon_cols, ['địa', 'dia']),
+                'KTPL': get_col(mon_cols, ['ktpl', 'gdcd', 'kinh tế', 'pháp luật', 'gdk'])
             }
             
-            # 3. TỪ ĐIỂN TỔ HỢP ĐẠI HỌC KHỔNG LỒ 
             ds_to_hop = {
                 'A00': ['Toán', 'Lý', 'Hóa'], 'A01': ['Toán', 'Lý', 'Anh'], 'A02': ['Toán', 'Lý', 'Sinh'],
                 'A03': ['Toán', 'Lý', 'Sử'], 'A04': ['Toán', 'Lý', 'Địa'], 'A05': ['Toán', 'Hóa', 'Sử'],
@@ -326,17 +325,14 @@ if gsheet_url:
                 'D15': ['Văn', 'Địa', 'Anh']
             }
             
-            # Tính toán tự động những tổ hợp khả thi dựa trên điểm học sinh có
             to_hop_hien_co = []
             for ten_khoi, ds_mon_thanh_phan in ds_to_hop.items():
                 cot_thuc_te = [mon_map[m] for m in ds_mon_thanh_phan if mon_map[m] is not None]
-                # Nếu file dữ liệu có đủ 3 cột môn này
                 if len(cot_thuc_te) == 3:
                     ten_cot_moi = f"{ten_khoi} ({'-'.join(ds_mon_thanh_phan)})"
                     df_wide[ten_cot_moi] = df_wide[cot_thuc_te].sum(axis=1, skipna=False).round(2)
                     to_hop_hien_co.append(ten_cot_moi)
             
-            # 4. Giao diện bộ lọc tổ hợp
             khoi_truyen_thong = [k for k in to_hop_hien_co if any(x in k for x in ["A00", "A01", "B00", "C00", "D01"])]
             chon_to_hop = st.multiselect(
                 "📌 Chọn các Tổ hợp muốn hiển thị trên Bảng (Có thể thêm/bớt tùy ý):", 
@@ -344,13 +340,11 @@ if gsheet_url:
                 default=khoi_truyen_thong
             )
             
-            # Lọc bảng theo lựa chọn
             cols_to_show = ['Ten_Hoc_Sinh', 'Lop'] + mon_cols + ['TB Tốt Nghiệp'] + chon_to_hop
             df_wide_show = df_wide[cols_to_show]
             
             st.dataframe(df_wide_show, use_container_width=True, hide_index=True)
             
-            # 5. Xuất dữ liệu
             c_x1, c_x2 = st.columns(2)
             with c_x1:
                 buffer_5 = io.BytesIO()
