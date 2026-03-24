@@ -182,7 +182,7 @@ if gsheet_url:
         
         st.markdown("<br>", unsafe_allow_html=True)
         
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 1. TỔNG QUAN", "📈 2. TIẾN TRÌNH 1 MÔN", "🔎 3. PHÂN TÍCH LỚP", "🏆 4. BẢNG TỔNG HỢP", "🎓 5. XÉT TỐT NGHIỆP & ĐẠI HỌC"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 1. TỔNG QUAN", "📈 2. TIẾN TRÌNH 1 MÔN", "🔎 3. PHÂN TÍCH LỚP", "🏆 4. BẢNG TỔNG HỢP", "🎓 5. XÉT TN & ĐẠI HỌC"])
         
         with tab1:
             st.markdown("#### 🌟 Biến động Điểm Trung bình Chung qua các Đợt thi")
@@ -271,29 +271,49 @@ if gsheet_url:
             st.dataframe(df_tong_hop_all, use_container_width=True, hide_index=True)
 
         # ---------------------------------------------------------------------
-        # TAB 5: XÉT TỐT NGHIỆP & ĐẠI HỌC (TÍNH TỔ HỢP ĐA DẠNG)
+        # TAB 5: XÉT TỐT NGHIỆP THPT CHUẨN THÔNG TƯ 24/2024 & ĐẠI HỌC
         # ---------------------------------------------------------------------
         with tab5:
-            st.markdown("#### 🎓 Bảng Phân tích Xét Tốt nghiệp & Khối thi Đại học")
-            st.info("💡 Điểm TB Tốt Nghiệp là Trung bình cộng các môn thi. Điểm Tổ hợp là Tổng điểm 3 môn cấu thành nên khối thi đó.")
+            st.markdown("#### 🎓 CÔNG CỤ GIẢ LẬP XÉT TỐT NGHIỆP 2026 (Chuẩn TT 24/2024/TT-BGDĐT)")
+            st.info("""
+            💡 **Công thức xét Tốt nghiệp mới nhất:** **ĐXTN** = [ (Tổng điểm 4 bài thi / 4) × 5 + (Điểm TB các năm học) × 5 ] / 10 + Điểm Ưu tiên + Điểm Khuyến khích
+            *(Trong đó: Điểm TB các năm học = (ĐTB Lớp 10 × 1 + ĐTB Lớp 11 × 2 + ĐTB Lớp 12 × 3) / 6)*
+            """)
             
-            lan_tab5 = st.selectbox("Chọn Đợt thi để xét tuyển:", ds_lan_thi, key='lan_tab5')
+            c_lan_tab5, c_t10, c_t11, c_t12, c_ut, c_kk = st.columns([1.5, 1, 1, 1, 1, 1])
+            with c_lan_tab5: lan_tab5 = st.selectbox("Chọn Đợt thi giả lập:", ds_lan_thi, key='lan_tab5')
+            with c_t10: tb_lop10 = st.number_input("🎯 ĐTB Lớp 10:", value=7.0, step=0.1)
+            with c_t11: tb_lop11 = st.number_input("🎯 ĐTB Lớp 11:", value=7.0, step=0.1)
+            with c_t12: tb_lop12 = st.number_input("🎯 ĐTB Lớp 12:", value=7.0, step=0.1)
+            with c_ut: diem_ut = st.number_input("⭐ Điểm Ưu tiên:", value=0.0, step=0.25)
+            with c_kk: diem_kk = st.number_input("⭐ Điểm K.Khích:", value=0.0, step=0.25)
+            
             df_dot = df_doc[df_doc['Lan_Thi'] == lan_tab5]
             
             df_wide = df_dot.pivot_table(index=['Ten_Hoc_Sinh', 'Lop'], columns='Mon_Hoc', values='Diem_Thi').reset_index()
-            # CHÌA KHÓA PHÁ BẪY "TypeError": Chỉ quét trong danh sách các môn học, không quét vào Tên và Lớp
             mon_cols = [c for c in df_wide.columns if c not in ['Ten_Hoc_Sinh', 'Lop']]
             
-            df_wide['TB Tốt Nghiệp'] = df_wide[mon_cols].mean(axis=1).round(2)
+            # --- TÍNH TOÁN THEO CÔNG THỨC 24/2024 ---
+            # 1. Tính ĐTB các năm học (Hệ số 1-2-3)
+            dtb_cac_nam = (tb_lop10 * 1 + tb_lop11 * 2 + tb_lop12 * 3) / 6
             
-            # Hàm tìm tên cột môn học SIÊU AN TOÀN
+            # 2. Tính TB 4 bài thi và Điểm liệt
+            df_wide['TB 4 Môn Thi'] = df_wide[mon_cols].mean(axis=1).round(2)
+            df_wide['Điểm Liệt'] = df_wide[mon_cols].min(axis=1)
+            
+            # 3. Tính Điểm Xét Tốt Nghiệp cuối cùng
+            df_wide['Điểm Xét TN'] = (((df_wide['TB 4 Môn Thi'] * 5) + (dtb_cac_nam * 5)) / 10 + diem_ut + diem_kk).round(2)
+            
+            # 4. Nhận diện ĐỖ / TRƯỢT (Điểm liệt <= 1.0)
+            df_wide['Kết quả TN'] = df_wide.apply(lambda row: "ĐỖ ✅" if row['Điểm Xét TN'] >= 5.0 and row['Điểm Liệt'] > 1.0 else "TRƯỢT ❌", axis=1)
+            
+            # --- TÍNH CÁC KHỐI ĐẠI HỌC ---
             def get_col(danh_sach_cot, keywords):
                 for c in danh_sach_cot:
                     for kw in keywords:
                         if kw in str(c).lower(): return c
                 return None
             
-            # Ánh xạ môn chỉ trên danh sách môn thi (mon_cols)
             mon_map = {
                 'Toán': get_col(mon_cols, ['toán', 'toan']),
                 'Văn': get_col(mon_cols, ['văn', 'ngữ']),
@@ -334,13 +354,15 @@ if gsheet_url:
                     to_hop_hien_co.append(ten_cot_moi)
             
             khoi_truyen_thong = [k for k in to_hop_hien_co if any(x in k for x in ["A00", "A01", "B00", "C00", "D01"])]
+            
+            st.markdown("---")
             chon_to_hop = st.multiselect(
-                "📌 Chọn các Tổ hợp muốn hiển thị trên Bảng (Có thể thêm/bớt tùy ý):", 
+                "📌 CHỌN TỔ HỢP XÉT ĐẠI HỌC CẦN XEM:", 
                 options=to_hop_hien_co, 
                 default=khoi_truyen_thong
             )
             
-            cols_to_show = ['Ten_Hoc_Sinh', 'Lop'] + mon_cols + ['TB Tốt Nghiệp'] + chon_to_hop
+            cols_to_show = ['Ten_Hoc_Sinh', 'Lop'] + mon_cols + ['TB 4 Môn Thi', 'Điểm Xét TN', 'Kết quả TN'] + chon_to_hop
             df_wide_show = df_wide[cols_to_show]
             
             st.dataframe(df_wide_show, use_container_width=True, hide_index=True)
@@ -349,12 +371,12 @@ if gsheet_url:
             with c_x1:
                 buffer_5 = io.BytesIO()
                 with pd.ExcelWriter(buffer_5, engine='xlsxwriter') as writer:
-                    df_wide.to_excel(writer, sheet_name='Xet_Tuyen_Full', index=False)
-                st.download_button("💾 Tải Bảng Điểm Tổ Hợp (Bao gồm TẤT CẢ khối)", data=buffer_5.getvalue(), file_name=f"To_Hop_{lan_tab5}.xlsx", mime="application/vnd.ms-excel", use_container_width=True)
+                    df_wide.drop(columns=['Điểm Liệt']).to_excel(writer, sheet_name='Xet_Tuyen_Full', index=False)
+                st.download_button("💾 Tải Bảng Điểm Xét Tốt Nghiệp & Đại Học", data=buffer_5.getvalue(), file_name=f"Xet_TN_DH_{lan_tab5}.xlsx", mime="application/vnd.ms-excel", use_container_width=True)
             with c_x2:
                 if st.button("🚀 XUẤT LÊN GOOGLE SHEETS", type="primary", use_container_width=True, key='btn_g5'):
                     if is_admin:
-                        thanh_cong, msg = ghi_ket_qua_len_sheet(df_wide, gsheet_url, f"Xét Tuyển - {lan_tab5}")
+                        thanh_cong, msg = ghi_ket_qua_len_sheet(df_wide.drop(columns=['Điểm Liệt']), gsheet_url, f"Xét TN & ĐH - {lan_tab5}")
                         if thanh_cong: st.success(msg)
                         else: st.error(msg)
                     else: st.warning("🔒 Vui lòng đăng nhập quyền Quản trị!")
