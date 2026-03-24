@@ -276,7 +276,7 @@ if gsheet_url:
         with tab5:
             st.markdown("#### 🎓 CÔNG CỤ GIẢ LẬP XÉT TỐT NGHIỆP 2026 (Chuẩn TT 24/2024/TT-BGDĐT)")
             st.info("""
-            💡 **Công thức xét Tốt nghiệp mới nhất:** **ĐXTN** = [ (Tổng điểm 4 bài thi / 4) × 5 + (Điểm TB các năm học) × 5 ] / 10 + Điểm Ưu tiên + Điểm Khuyến khích
+            💡 **Công thức xét Tốt nghiệp:** **ĐXTN** = [ ((Tổng điểm 4 bài thi + Điểm Khuyến khích) / 4) + Điểm TB các năm học ] / 2 + Điểm Ưu tiên
             *(Trong đó: Điểm TB các năm học = (ĐTB Lớp 10 × 1 + ĐTB Lớp 11 × 2 + ĐTB Lớp 12 × 3) / 6)*
             """)
             
@@ -285,26 +285,28 @@ if gsheet_url:
             with c_t10: tb_lop10 = st.number_input("🎯 ĐTB Lớp 10:", value=7.0, step=0.1)
             with c_t11: tb_lop11 = st.number_input("🎯 ĐTB Lớp 11:", value=7.0, step=0.1)
             with c_t12: tb_lop12 = st.number_input("🎯 ĐTB Lớp 12:", value=7.0, step=0.1)
-            with c_ut: diem_ut = st.number_input("⭐ Điểm Ưu tiên:", value=0.0, step=0.25)
-            with c_kk: diem_kk = st.number_input("⭐ Điểm K.Khích:", value=0.0, step=0.25)
+            with c_ut: diem_ut = st.number_input("⭐ Ưu tiên (UT):", value=0.0, step=0.25)
+            with c_kk: diem_kk = st.number_input("🌟 K.Khích (KK):", value=0.0, step=0.5)
             
             df_dot = df_doc[df_doc['Lan_Thi'] == lan_tab5]
             
             df_wide = df_dot.pivot_table(index=['Ten_Hoc_Sinh', 'Lop'], columns='Mon_Hoc', values='Diem_Thi').reset_index()
             mon_cols = [c for c in df_wide.columns if c not in ['Ten_Hoc_Sinh', 'Lop']]
             
-            # --- TÍNH TOÁN THEO CÔNG THỨC 24/2024 ---
+            # --- CHỮA LỖI VÀ TÍNH TOÁN THEO ĐÚNG CÔNG THỨC 24/2024 ---
+            
             # 1. Tính ĐTB các năm học (Hệ số 1-2-3)
             dtb_cac_nam = (tb_lop10 * 1 + tb_lop11 * 2 + tb_lop12 * 3) / 6
             
-            # 2. Tính TB 4 bài thi và Điểm liệt
-            df_wide['TB 4 Môn Thi'] = df_wide[mon_cols].mean(axis=1).round(2)
+            # 2. Tính Tổng điểm 4 bài thi và Điểm liệt
+            # Dùng hàm sum() để lấy Tổng chính xác 4 môn thi mà học sinh đã làm
+            df_wide['Tổng 4 Môn'] = df_wide[mon_cols].sum(axis=1)
             df_wide['Điểm Liệt'] = df_wide[mon_cols].min(axis=1)
             
-            # 3. Tính Điểm Xét Tốt Nghiệp cuối cùng
-            df_wide['Điểm Xét TN'] = (((df_wide['TB 4 Môn Thi'] * 5) + (dtb_cac_nam * 5)) / 10 + diem_ut + diem_kk).round(2)
+            # 3. ÉP CHUẨN CÔNG THỨC: Điểm KK cộng vào Tổng 4 môn, Điểm UT cộng vòng ngoài
+            df_wide['Điểm Xét TN'] = ((((df_wide['Tổng 4 Môn'] + diem_kk) / 4) + dtb_cac_nam) / 2 + diem_ut).round(2)
             
-            # 4. Nhận diện ĐỖ / TRƯỢT (Điểm liệt <= 1.0)
+            # 4. Nhận diện ĐỖ / TRƯỢT (Không có môn nào bị <= 1.0)
             df_wide['Kết quả TN'] = df_wide.apply(lambda row: "ĐỖ ✅" if row['Điểm Xét TN'] >= 5.0 and row['Điểm Liệt'] > 1.0 else "TRƯỢT ❌", axis=1)
             
             # --- TÍNH CÁC KHỐI ĐẠI HỌC ---
@@ -362,7 +364,7 @@ if gsheet_url:
                 default=khoi_truyen_thong
             )
             
-            cols_to_show = ['Ten_Hoc_Sinh', 'Lop'] + mon_cols + ['TB 4 Môn Thi', 'Điểm Xét TN', 'Kết quả TN'] + chon_to_hop
+            cols_to_show = ['Ten_Hoc_Sinh', 'Lop'] + mon_cols + ['Tổng 4 Môn', 'Điểm Xét TN', 'Kết quả TN'] + chon_to_hop
             df_wide_show = df_wide[cols_to_show]
             
             st.dataframe(df_wide_show, use_container_width=True, hide_index=True)
