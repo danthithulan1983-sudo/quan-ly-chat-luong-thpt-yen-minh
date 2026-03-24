@@ -71,7 +71,6 @@ def load_and_transform_data(url):
             if c_mon.lower() in ["nan", "none", "unnamed", ""]: c_mon = ""
             c_mon_lower = c_mon.lower()
             
-            # --- TỪ ĐIỂN CỘT CỐ ĐỊNH THÔNG MINH (Bao gồm cả thông tin Điểm TB & Ưu tiên) ---
             is_fixed = False
             if c_mon_lower in ['tt', 'stt', 'sbd', 'họ tên', 'ngày sinh', 'lớp', 'trường', 'ghi chú', 'họ và tên', 'họ_và_tên', 'ngày_tháng_năm_sinh', 'lop', 'ten_hoc_sinh', 'phòng thi', 'phòng', 'mã hs']:
                 is_fixed = True
@@ -105,7 +104,6 @@ def load_and_transform_data(url):
         df_doc['Lan_Thi'] = split_cols[1]
         df_doc['Diem_Thi'] = df_doc['_VAL_AI_']
             
-        # ĐỔI TÊN CHUẨN ĐỂ MÁY TÍNH XỬ LÝ
         rename_dict = {}
         has_ten = False
         has_lop = False
@@ -133,7 +131,6 @@ def load_and_transform_data(url):
             
         df_clean = df_doc[cols_to_keep].copy()
         
-        # Làm sạch số liệu (Đổi dấu phẩy thành dấu chấm cho các cột thông tin)
         for col in ['TB_10', 'TB_11', 'TB_12', 'Diem_UT', 'Diem_KK']:
             if col in df_clean.columns:
                 df_clean[col] = df_clean[col].astype(str).str.replace(',', '.')
@@ -247,17 +244,26 @@ if gsheet_url:
                 bins = [-1, 3.499, 4.999, 6.999, 7.999, 10.1]
                 labels = ['< 3.5', '3.5 - < 5.0', '5.0 - < 7.0', '7.0 - < 8.0', '8.0 - 10']
                 df_hien_tai['Pho_Diem'] = pd.cut(df_hien_tai['Diem_Thi'], bins=bins, labels=labels, right=False)
-                bang_pho_diem = pd.crosstab(df_hien_tai['Lop'], df_hien_tai['Pho_Diem']).reindex(columns=labels, fill_value=0)
+                
+                # Sửa lỗi: Lấy danh sách Toàn bộ các lớp của trường để 100% không bị mất lớp nào
+                danh_sach_lop_all = sorted(df_doc['Lop'].unique())
+                bang_pho_diem = pd.crosstab(df_hien_tai['Lop'], df_hien_tai['Pho_Diem']).reindex(index=danh_sach_lop_all, columns=labels, fill_value=0)
                 dong_toan_khoi_pd = pd.DataFrame(bang_pho_diem.sum()).T
                 dong_toan_khoi_pd.index = ['⭐ TOÀN KHỐI']
                 bang_pho_diem = pd.concat([bang_pho_diem, dong_toan_khoi_pd])
                 
                 bao_cao_list = []
-                for lop in sorted(df_hien_tai['Lop'].unique()):
+                for lop in danh_sach_lop_all:
                     lop_data = df_hien_tai[df_hien_tai['Lop'] == lop]
-                    bao_cao_list.append({'Lớp': lop, 'Sĩ số': len(lop_data), 'Điểm TB': round(lop_data['Diem_Thi'].mean(), 2), 'Chênh lệch CT': round(lop_data['Diem_Thi'].mean() - chi_tieu_mon, 2)})
+                    si_so = len(lop_data)
+                    dtb = lop_data['Diem_Thi'].mean()
+                    bao_cao_list.append({
+                        'Lớp': lop, 'Sĩ số': si_so, 
+                        'Điểm TB': round(dtb, 2) if pd.notna(dtb) else None, 
+                        'Chênh lệch CT': round(dtb - chi_tieu_mon, 2) if pd.notna(dtb) else None
+                    })
                 
-                df_bao_cao = pd.DataFrame(bao_cao_list).sort_values(by='Điểm TB', ascending=False).reset_index(drop=True)
+                df_bao_cao = pd.DataFrame(bao_cao_list).sort_values(by='Điểm TB', ascending=False, na_position='last').reset_index(drop=True)
                 df_bao_cao.insert(0, 'Xếp hạng', range(1, len(df_bao_cao) + 1))
                 df_tong_hop = pd.merge(df_bao_cao, bang_pho_diem.reset_index(), left_on='Lớp', right_on='index', how='left').drop(columns=['index'])
                 
@@ -293,7 +299,7 @@ if gsheet_url:
                 du_lieu_bang.append(row)
                 
             df_tong_hop_all = pd.DataFrame(du_lieu_bang)
-            df_chi_tiet = df_tong_hop_all[df_tong_hop_all['Lớp'] != "⭐ TOÀN KHỐI"].sort_values(by='TB Chung', ascending=False)
+            df_chi_tiet = df_tong_hop_all[df_tong_hop_all['Lớp'] != "⭐ TOÀN KHỐI"].sort_values(by='TB Chung', ascending=False, na_position='last')
             df_toan_khoi = df_tong_hop_all[df_tong_hop_all['Lớp'] == "⭐ TOÀN KHỐI"]
             df_tong_hop_all = pd.concat([df_chi_tiet, df_toan_khoi]).reset_index(drop=True)
             st.dataframe(df_tong_hop_all, use_container_width=True, hide_index=True)
@@ -304,45 +310,41 @@ if gsheet_url:
         with tab5:
             st.markdown("#### 🎓 HỆ THỐNG XÉT TỐT NGHIỆP VÀ ĐẠI HỌC 2026")
             st.info("""
-            💡 Hệ thống ưu tiên đọc **ĐTB Lớp 10, Lớp 11, Lớp 12, Điểm UT, Điểm KK** từ file dữ liệu. Nếu cột nào bị trống/không có, hệ thống sẽ sử dụng các giá trị nhập sẵn dưới đây để giả lập.
+            💡 Nếu file Excel CÓ nhập ĐTB 10, 11, 12, UT, KK: Máy sẽ tính riêng từng học sinh. Nếu bị trống, máy tự bù bằng các số giả lập bên dưới để không một học sinh nào bị loại khỏi bảng.
             """)
             
             c_lan_tab5, c_t10, c_t11, c_t12, c_ut, c_kk = st.columns([1.5, 1, 1, 1, 1, 1])
             with c_lan_tab5: lan_tab5 = st.selectbox("Chọn Đợt thi giả lập:", ds_lan_thi, key='lan_tab5')
-            with c_t10: tb_lop10_mac_dinh = st.number_input("🎯 ĐTB Lớp 10 (Chung):", value=7.0, step=0.1)
-            with c_t11: tb_lop11_mac_dinh = st.number_input("🎯 ĐTB Lớp 11 (Chung):", value=7.0, step=0.1)
-            with c_t12: tb_lop12_mac_dinh = st.number_input("🎯 ĐTB Lớp 12 (Chung):", value=7.0, step=0.1)
-            with c_ut: uu_tien_mac_dinh = st.number_input("⭐ Điểm UT (Chung):", value=0.0, step=0.25)
-            with c_kk: kkhich_mac_dinh = st.number_input("🌟 Điểm KK (Chung):", value=0.0, step=0.5)
+            with c_t10: tb_lop10 = st.number_input("🎯 Giả lập Lớp 10:", value=7.0, step=0.1)
+            with c_t11: tb_lop11 = st.number_input("🎯 Giả lập Lớp 11:", value=7.0, step=0.1)
+            with c_t12: tb_lop12 = st.number_input("🎯 Giả lập Lớp 12:", value=7.0, step=0.1)
+            with c_ut: diem_ut = st.number_input("⭐ Giả lập UT:", value=0.0, step=0.25)
+            with c_kk: diem_kk = st.number_input("🌟 Giả lập KK:", value=0.0, step=0.5)
             
-            df_dot = df_doc[df_doc['Lan_Thi'] == lan_tab5]
+            df_dot = df_doc[df_doc['Lan_Thi'] == lan_tab5].copy()
             
-            index_cols = ['Ten_Hoc_Sinh', 'Lop']
-            # Gom toàn bộ các cột thông tin cá nhân hiện có đưa vào hiển thị
-            cac_cot_thong_tin_co = [c for c in ['TB_10', 'TB_11', 'TB_12', 'Diem_UT', 'Diem_KK'] if c in df_dot.columns]
-            index_cols.extend(cac_cot_thong_tin_co)
+            # --- CHÌA KHÓA: Bù dữ liệu trước khi Pivot để Pandas KHÔNG THỂ vứt học sinh ---
+            if 'TB_10' in df_dot.columns: df_dot['TB_10_Thuc'] = df_dot['TB_10'].fillna(tb_lop10)
+            else: df_dot['TB_10_Thuc'] = tb_lop10
+            
+            if 'TB_11' in df_dot.columns: df_dot['TB_11_Thuc'] = df_dot['TB_11'].fillna(tb_lop11)
+            else: df_dot['TB_11_Thuc'] = tb_lop11
+            
+            if 'TB_12' in df_dot.columns: df_dot['TB_12_Thuc'] = df_dot['TB_12'].fillna(tb_lop12)
+            else: df_dot['TB_12_Thuc'] = tb_lop12
+            
+            if 'Diem_UT' in df_dot.columns: df_dot['UT_Thuc'] = df_dot['Diem_UT'].fillna(diem_ut)
+            else: df_dot['UT_Thuc'] = diem_ut
+            
+            if 'Diem_KK' in df_dot.columns: df_dot['KK_Thuc'] = df_dot['Diem_KK'].fillna(diem_kk)
+            else: df_dot['KK_Thuc'] = diem_kk
+
+            index_cols = ['Ten_Hoc_Sinh', 'Lop', 'TB_10_Thuc', 'TB_11_Thuc', 'TB_12_Thuc', 'UT_Thuc', 'KK_Thuc']
             
             df_wide = df_dot.pivot_table(index=index_cols, columns='Mon_Hoc', values='Diem_Thi').reset_index()
             mon_cols = [c for c in df_wide.columns if c not in index_cols]
-            
-            # --- TỰ ĐỘNG BÙ ĐẮP DỮ LIỆU ---
-            # Nếu file Excel CÓ cột -> Ưu tiên dùng điểm trong file. Nếu file KHÔNG CÓ -> Dùng điểm trên bảng Điều khiển.
-            if 'TB_10' in df_wide.columns: df_wide['TB_10_Thuc'] = df_wide['TB_10'].fillna(tb_lop10_mac_dinh)
-            else: df_wide['TB_10_Thuc'] = tb_lop10_mac_dinh
-            
-            if 'TB_11' in df_wide.columns: df_wide['TB_11_Thuc'] = df_wide['TB_11'].fillna(tb_lop11_mac_dinh)
-            else: df_wide['TB_11_Thuc'] = tb_lop11_mac_dinh
-            
-            if 'TB_12' in df_wide.columns: df_wide['TB_12_Thuc'] = df_wide['TB_12'].fillna(tb_lop12_mac_dinh)
-            else: df_wide['TB_12_Thuc'] = tb_lop12_mac_dinh
-            
-            if 'Diem_UT' in df_wide.columns: df_wide['UT_Thuc'] = df_wide['Diem_UT'].fillna(uu_tien_mac_dinh)
-            else: df_wide['UT_Thuc'] = uu_tien_mac_dinh
-            
-            if 'Diem_KK' in df_wide.columns: df_wide['KK_Thuc'] = df_wide['Diem_KK'].fillna(kkhich_mac_dinh)
-            else: df_wide['KK_Thuc'] = kkhich_mac_dinh
 
-            # --- TÍNH TOÁN THEO CÔNG THỨC 24/2024 VỚI ĐIỂM CÁ NHÂN ---
+            # Tính toán chuẩn TT 24/2024/TT-BGDĐT
             dtb_cac_nam = (df_wide['TB_10_Thuc'] * 1 + df_wide['TB_11_Thuc'] * 2 + df_wide['TB_12_Thuc'] * 3) / 6
             df_wide['Tổng 4 Môn'] = df_wide[mon_cols].sum(axis=1)
             df_wide['Điểm Liệt'] = df_wide[mon_cols].min(axis=1)
@@ -387,8 +389,10 @@ if gsheet_url:
             st.markdown("---")
             chon_to_hop = st.multiselect("📌 CHỌN TỔ HỢP ĐẠI HỌC MUỐN XEM:", options=to_hop_hien_co, default=khoi_truyen_thong)
             
-            # Gộp các cột thông tin gốc đã nhận diện được hiển thị ra màn hình
-            cols_to_show = ['Ten_Hoc_Sinh', 'Lop'] + cac_cot_thong_tin_co + mon_cols + ['Tổng 4 Môn', 'Điểm Xét TN', 'Kết quả TN'] + chon_to_hop
+            # Đổi tên lại cho đẹp trên bảng hiển thị
+            df_wide = df_wide.rename(columns={'TB_10_Thuc': 'ĐTB 10', 'TB_11_Thuc': 'ĐTB 11', 'TB_12_Thuc': 'ĐTB 12', 'UT_Thuc': 'UT', 'KK_Thuc': 'KK'})
+            
+            cols_to_show = ['Ten_Hoc_Sinh', 'Lop', 'ĐTB 10', 'ĐTB 11', 'ĐTB 12', 'UT', 'KK'] + mon_cols + ['Tổng 4 Môn', 'Điểm Xét TN', 'Kết quả TN'] + chon_to_hop
             df_wide_show = df_wide[cols_to_show]
             
             st.dataframe(df_wide_show, use_container_width=True, hide_index=True)
