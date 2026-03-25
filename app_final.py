@@ -227,7 +227,6 @@ if gsheet_url:
             df_t1 = tb_khoi_cac_lan[['Lan_Thi', 'Điểm TB Chung', 'Chỉ tiêu Giao', 'Chênh lệch']]
             st.dataframe(df_t1, use_container_width=True, hide_index=True)
             
-            # --- PHỤC HỒI NÚT XUẤT CHO TAB 1 ---
             if st.button("🚀 XUẤT LÊN GOOGLE SHEETS", type="primary", key="btn_g1"):
                 if is_admin:
                     thanh_cong, msg = ghi_ket_qua_len_sheet(df_t1, gsheet_url, "Tổng quan Chung")
@@ -257,7 +256,6 @@ if gsheet_url:
                 df_t2 = tb_mon_cac_lan[['Lan_Thi', 'Điểm TB Môn', 'Chênh lệch']]
                 st.dataframe(df_t2, hide_index=True)
                 
-                # --- PHỤC HỒI NÚT XUẤT CHO TAB 2 ---
                 if st.button("🚀 XUẤT LÊN GOOGLE SHEETS", type="primary", use_container_width=True, key="btn_g2"):
                     if is_admin:
                         thanh_cong, msg = ghi_ket_qua_len_sheet(df_t2, gsheet_url, f"Tiến trình {chon_mon_tab2}")
@@ -307,7 +305,6 @@ if gsheet_url:
 
                 st.dataframe(df_tong_hop, use_container_width=True, hide_index=True)
 
-                # --- PHỤC HỒI TOÀN BỘ CÁC NÚT CHO TAB 3 (EXCEL, SHEETS, AI) ---
                 c_btn1, c_btn2, c_btn3 = st.columns(3)
                 with c_btn1:
                     buffer = io.BytesIO()
@@ -343,9 +340,12 @@ if gsheet_url:
                     st.text_area("Khung Soạn thảo:", value=st.session_state.ai_ket_qua, height=300)
 
         # ---------------------------------------------------------------------
-        # TAB 4: BẢNG TỔNG HỢP TOÀN DIỆN TẤT CẢ CÁC MÔN
+        # TAB 4: BẢNG TỔNG HỢP TOÀN DIỆN TẤT CẢ CÁC MÔN (HIỂN THỊ RÕ NÉT)
         # ---------------------------------------------------------------------
         with tab4:
+            st.markdown("#### 🏆 Bảng Xếp Hạng Tổng Hợp & Đánh giá Sự Tiến Bộ Trực Quan")
+            st.info("💡 Điểm Lần trước và Lần sau được hiển thị cạnh nhau để dễ so sánh. Cột `+/-` được tự động bôi màu: **Xanh (Tiến bộ)**, **Đỏ (Thụt lùi)**.")
+            
             c_lan1, c_lan2 = st.columns(2)
             with c_lan1: lan_truoc = st.selectbox("So sánh từ:", ds_lan_thi, index=0, key='lan_truoc_t4')
             with c_lan2: lan_sau = st.selectbox("Đến (Lần hiện tại):", ds_lan_thi, index=len(ds_lan_thi)-1 if len(ds_lan_thi)>1 else 0, key='lan_sau_t4')
@@ -359,23 +359,47 @@ if gsheet_url:
                 df_lop = df_2lan if lop == "⭐ TOÀN KHỐI" else df_2lan[df_2lan['Lop'] == lop]
                 tb_truoc = df_lop[df_lop['Lan_Thi'] == lan_truoc]['Diem_Thi'].mean()
                 tb_sau = df_lop[df_lop['Lan_Thi'] == lan_sau]['Diem_Thi'].mean()
-                row = {'Lớp': lop, 'TB Chung': round(tb_sau, 2) if pd.notna(tb_sau) else None, '+/- Chung': round(tb_sau - tb_truoc, 2) if pd.notna(tb_sau) and pd.notna(tb_truoc) else None}
+                
+                row = {
+                    'Lớp': lop, 
+                    f'TB Chung ({lan_truoc})': round(tb_truoc, 2) if pd.notna(tb_truoc) else None,
+                    f'TB Chung ({lan_sau})': round(tb_sau, 2) if pd.notna(tb_sau) else None,
+                    '+/- TB': round(tb_sau - tb_truoc, 2) if pd.notna(tb_sau) and pd.notna(tb_truoc) else None
+                }
                 
                 for mon in ds_mon:
                     df_mon = df_lop[df_lop['Mon_Hoc'] == mon]
                     m_truoc = df_mon[df_mon['Lan_Thi'] == lan_truoc]['Diem_Thi'].mean()
                     m_sau = df_mon[df_mon['Lan_Thi'] == lan_sau]['Diem_Thi'].mean()
-                    row[f'{mon}'] = round(m_sau, 2) if pd.notna(m_sau) else None
+                    
+                    row[f'{mon} ({lan_truoc})'] = round(m_truoc, 2) if pd.notna(m_truoc) else None
+                    row[f'{mon} ({lan_sau})'] = round(m_sau, 2) if pd.notna(m_sau) else None
                     row[f'+/- {mon}'] = round(m_sau - m_truoc, 2) if pd.notna(m_sau) and pd.notna(m_truoc) else None
                 du_lieu_bang.append(row)
                 
             df_tong_hop_all = pd.DataFrame(du_lieu_bang)
-            df_chi_tiet = df_tong_hop_all[df_tong_hop_all['Lớp'] != "⭐ TOÀN KHỐI"].sort_values(by='TB Chung', ascending=False, na_position='last')
+            
+            # Sắp xếp theo thứ hạng của lần thi sau
+            col_sort = f'TB Chung ({lan_sau})'
+            df_chi_tiet = df_tong_hop_all[df_tong_hop_all['Lớp'] != "⭐ TOÀN KHỐI"].sort_values(by=col_sort, ascending=False, na_position='last')
             df_toan_khoi = df_tong_hop_all[df_tong_hop_all['Lớp'] == "⭐ TOÀN KHỐI"]
             df_tong_hop_all = pd.concat([df_chi_tiet, df_toan_khoi]).reset_index(drop=True)
-            st.dataframe(df_tong_hop_all, use_container_width=True, hide_index=True)
+            
+            # Hàm đổ màu thông minh cho thư viện Pandas
+            def color_chenh_lech(val):
+                try:
+                    v = float(val)
+                    if v > 0: return 'color: #155724; background-color: #d4edda; font-weight: bold;' # Xanh lá
+                    elif v < 0: return 'color: #721c24; background-color: #f8d7da; font-weight: bold;' # Đỏ
+                except: pass
+                return ''
 
-            # --- PHỤC HỒI NÚT XUẤT CHO TAB 4 ---
+            # Áp dụng màu cho các cột có chứa ký tự "+/-"
+            cot_can_to_mau = [c for c in df_tong_hop_all.columns if '+/-' in c]
+            styled_df = df_tong_hop_all.style.map(color_chenh_lech, subset=cot_can_to_mau)
+            
+            st.dataframe(styled_df, use_container_width=True, hide_index=True)
+
             c_x1, c_x2 = st.columns(2)
             with c_x1:
                 buffer_all = io.BytesIO()
@@ -391,7 +415,7 @@ if gsheet_url:
                     else: st.warning("🔒 Vui lòng đăng nhập quyền Quản trị!")
 
         # ---------------------------------------------------------------------
-        # TAB 5: XÉT TỐT NGHIỆP THPT (CÁ NHÂN HÓA 100% THEO FILE) & ĐẠI HỌC
+        # TAB 5: XÉT TỐT NGHIỆP THPT & ĐẠI HỌC
         # ---------------------------------------------------------------------
         with tab5:
             st.markdown("#### 🎓 HỆ THỐNG XÉT TỐT NGHIỆP VÀ ĐẠI HỌC 2026")
@@ -481,7 +505,6 @@ if gsheet_url:
             
             st.dataframe(df_wide_show, use_container_width=True, hide_index=True)
             
-            # --- TAB 5 BUTTONS ---
             c_x1, c_x2 = st.columns(2)
             with c_x1:
                 buffer_5 = io.BytesIO()
