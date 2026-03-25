@@ -124,7 +124,11 @@ def load_and_transform_data(url):
         df_doc = df_doc.rename(columns=rename_dict)
         if 'Lop' not in df_doc.columns: df_doc['Lop'] = "Khối Chung"
         if 'Ten_Hoc_Sinh' not in df_doc.columns: df_doc['Ten_Hoc_Sinh'] = "Chưa rõ"
-            
+        
+        # BẢO LƯU DANH SÁCH LỚP GỐC TRƯỚC KHI XÓA ĐIỂM
+        df_doc['Lop'] = df_doc['Lop'].fillna("Chưa rõ Lớp").astype(str).replace('nan', 'Chưa rõ Lớp').replace('', 'Chưa rõ Lớp')
+        danh_sach_toan_bo_lop = sorted(list(df_doc['Lop'].unique()))
+        
         cols_to_keep = ['Ten_Hoc_Sinh', 'Lop', 'Mon_Hoc', 'Lan_Thi', 'Diem_Thi']
         for ext in ['TB_10', 'TB_11', 'TB_12', 'Diem_UT', 'Diem_KK']:
             if ext in df_doc.columns: cols_to_keep.append(ext)
@@ -136,18 +140,14 @@ def load_and_transform_data(url):
                 df_clean[col] = df_clean[col].astype(str).str.replace(',', '.')
                 df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce')
 
-        df_clean['Lop'] = df_clean['Lop'].fillna("Chưa rõ Lớp").astype(str)
-        df_clean['Lop'] = df_clean['Lop'].replace('nan', 'Chưa rõ Lớp')
-        df_clean['Lop'] = df_clean['Lop'].replace('', 'Chưa rõ Lớp')
-        
         df_clean = df_clean.dropna(subset=['Diem_Thi', 'Mon_Hoc', 'Lan_Thi'])
         df_clean['Diem_Thi'] = df_clean['Diem_Thi'].astype(str).str.replace(',', '.')
         df_clean['Diem_Thi'] = pd.to_numeric(df_clean['Diem_Thi'], errors='coerce')
         df_clean = df_clean.dropna(subset=['Diem_Thi'])
         
-        return df_clean, None
+        return df_clean, danh_sach_toan_bo_lop, None
     except Exception as e:
-        return None, f"🛑 Lỗi đọc dữ liệu: {e}"
+        return None, None, f"🛑 Lỗi đọc dữ liệu: {e}"
 
 def ghi_ket_qua_len_sheet(df_ket_qua, link_sheet, ten_sheet_dich="Bao_Cao_AI"):
     try:
@@ -191,7 +191,7 @@ with st.sidebar:
 # 3. LUỒNG PHÂN TÍCH CHÍNH & 5 TAB BÁO CÁO
 # ==========================================
 if gsheet_url:
-    df_doc, err = load_and_transform_data(gsheet_url)
+    df_doc, list_all_classes, err = load_and_transform_data(gsheet_url)
     if err:
         st.error(err)
     elif df_doc.empty:
@@ -209,9 +209,7 @@ if gsheet_url:
         
         tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 1. TỔNG QUAN", "📈 2. TIẾN TRÌNH 1 MÔN", "🔎 3. PHÂN TÍCH LỚP", "🏆 4. BẢNG TỔNG HỢP", "🎓 5. XÉT TN & ĐẠI HỌC"])
         
-        # ---------------------------------------------------------------------
-        # TAB 1: TỔNG QUAN TOÀN KHỐI
-        # ---------------------------------------------------------------------
+        # --- TAB 1 ---
         with tab1:
             st.markdown("#### 🌟 Biến động Điểm Trung bình Chung qua các Đợt thi")
             tb_khoi_cac_lan = df_doc.groupby('Lan_Thi')['Diem_Thi'].mean().reset_index()
@@ -234,9 +232,7 @@ if gsheet_url:
                     else: st.error(msg)
                 else: st.warning("🔒 Vui lòng đăng nhập quyền Quản trị!")
 
-        # ---------------------------------------------------------------------
-        # TAB 2: TIẾN TRÌNH BỘ MÔN
-        # ---------------------------------------------------------------------
+        # --- TAB 2 ---
         with tab2:
             chon_mon_tab2 = st.selectbox("🔍 Chọn Môn học để xem tiến trình:", ds_mon, key='mon_tab2')
             df_mon_tien_trinh = df_doc[df_doc['Mon_Hoc'] == chon_mon_tab2]
@@ -263,9 +259,7 @@ if gsheet_url:
                         else: st.error(msg)
                     else: st.warning("🔒 Vui lòng đăng nhập quyền Quản trị!")
 
-        # ---------------------------------------------------------------------
-        # TAB 3: PHÂN TÍCH SÂU 1 MÔN (XẾP HẠNG LỚP & AI THAM MƯU)
-        # ---------------------------------------------------------------------
+        # --- TAB 3 ---
         with tab3:
             cc1, cc2 = st.columns(2)
             with cc1: chon_mon = st.selectbox("Chọn Môn học:", ds_mon, key='mon_tab3')
@@ -277,14 +271,14 @@ if gsheet_url:
                 labels = ['< 3.5', '3.5 - < 5.0', '5.0 - < 7.0', '7.0 - < 8.0', '8.0 - 10']
                 df_hien_tai['Pho_Diem'] = pd.cut(df_hien_tai['Diem_Thi'], bins=bins, labels=labels, right=False)
                 
-                danh_sach_lop_all = sorted(df_doc['Lop'].unique())
-                bang_pho_diem = pd.crosstab(df_hien_tai['Lop'], df_hien_tai['Pho_Diem']).reindex(index=danh_sach_lop_all, columns=labels, fill_value=0)
+                # Áp dụng danh sách ALL CLASSES
+                bang_pho_diem = pd.crosstab(df_hien_tai['Lop'], df_hien_tai['Pho_Diem']).reindex(index=list_all_classes, columns=labels, fill_value=0)
                 dong_toan_khoi_pd = pd.DataFrame(bang_pho_diem.sum()).T
                 dong_toan_khoi_pd.index = ['⭐ TOÀN KHỐI']
                 bang_pho_diem = pd.concat([bang_pho_diem, dong_toan_khoi_pd])
                 
                 bao_cao_list = []
-                for lop in danh_sach_lop_all:
+                for lop in list_all_classes:
                     lop_data = df_hien_tai[df_hien_tai['Lop'] == lop]
                     si_so = len(lop_data)
                     dtb = lop_data['Diem_Thi'].mean()
@@ -298,10 +292,18 @@ if gsheet_url:
                 df_bao_cao.insert(0, 'Xếp hạng', range(1, len(df_bao_cao) + 1))
                 df_tong_hop = pd.merge(df_bao_cao, bang_pho_diem.reset_index(), left_on='Lớp', right_on='index', how='left').drop(columns=['index'])
                 
+                # Hàm xóa số 0 tàng hình
+                def clean_zero(val):
+                    if pd.isna(val) or val == 0 or val == 0.0: return ""
+                    return val
+                
+                for c in ['Điểm TB', 'Chênh lệch CT'] + labels:
+                    df_tong_hop[c] = df_tong_hop[c].apply(clean_zero)
+                
                 tb_khoi = df_hien_tai['Diem_Thi'].mean()
                 d_toan_khoi = {'Xếp hạng': '-', 'Lớp': '⭐ TOÀN KHỐI', 'Sĩ số': len(df_hien_tai), 'Điểm TB': round(tb_khoi, 2), 'Chênh lệch CT': round(tb_khoi - chi_tieu_mon, 2)}
                 for col in labels: d_toan_khoi[col] = dong_toan_khoi_pd[col].values[0]
-                df_tong_hop.loc[len(df_tong_hop)] = d_toan_khoi
+                df_tong_hop.loc[len(df_tong_hop)-1] = d_toan_khoi 
 
                 st.dataframe(df_tong_hop, use_container_width=True, hide_index=True)
 
@@ -340,18 +342,20 @@ if gsheet_url:
                     st.text_area("Khung Soạn thảo:", value=st.session_state.ai_ket_qua, height=300)
 
         # ---------------------------------------------------------------------
-        # TAB 4: BẢNG TỔNG HỢP TOÀN DIỆN TẤT CẢ CÁC MÔN (HIỂN THỊ RÕ NÉT)
+        # TAB 4: BẢNG TỔNG HỢP TOÀN DIỆN & TÀNG HÌNH SỐ 0
         # ---------------------------------------------------------------------
         with tab4:
             st.markdown("#### 🏆 Bảng Xếp Hạng Tổng Hợp & Đánh giá Sự Tiến Bộ Trực Quan")
-            st.info("💡 Điểm Lần trước và Lần sau được hiển thị cạnh nhau để dễ so sánh. Cột `+/-` được tự động bôi màu: **Xanh (Tiến bộ)**, **Đỏ (Thụt lùi)**.")
+            st.info("💡 Điểm Lần trước và Lần sau được hiển thị cạnh nhau để dễ so sánh. Cột `+/-` được tự động bôi màu: **Xanh (Tiến bộ)**, **Đỏ (Thụt lùi)**. (Các số 0 bị ẩn để bảng sạch hơn).")
             
             c_lan1, c_lan2 = st.columns(2)
             with c_lan1: lan_truoc = st.selectbox("So sánh từ:", ds_lan_thi, index=0, key='lan_truoc_t4')
             with c_lan2: lan_sau = st.selectbox("Đến (Lần hiện tại):", ds_lan_thi, index=len(ds_lan_thi)-1 if len(ds_lan_thi)>1 else 0, key='lan_sau_t4')
             
             df_2lan = df_doc[df_doc['Lan_Thi'].isin([lan_truoc, lan_sau])]
-            danh_sach_lop = sorted(df_doc['Lop'].unique())
+            
+            # Khôi phục toàn bộ các lớp học (Kể cả lớp chưa thi)
+            danh_sach_lop = list(list_all_classes)
             danh_sach_lop.append("⭐ TOÀN KHỐI")
             
             du_lieu_bang = []
@@ -379,22 +383,30 @@ if gsheet_url:
                 
             df_tong_hop_all = pd.DataFrame(du_lieu_bang)
             
-            # Sắp xếp theo thứ hạng của lần thi sau
             col_sort = f'TB Chung ({lan_sau})'
             df_chi_tiet = df_tong_hop_all[df_tong_hop_all['Lớp'] != "⭐ TOÀN KHỐI"].sort_values(by=col_sort, ascending=False, na_position='last')
             df_toan_khoi = df_tong_hop_all[df_tong_hop_all['Lớp'] == "⭐ TOÀN KHỐI"]
             df_tong_hop_all = pd.concat([df_chi_tiet, df_toan_khoi]).reset_index(drop=True)
             
+            # --- BỘ LỌC TÀNG HÌNH SỐ 0 ĐỂ BẢNG THOÁNG MẮT NHẤT ---
+            def hide_zero(val):
+                if pd.isna(val) or val == 0 or val == 0.0: return ""
+                return val
+            
+            for col in df_tong_hop_all.columns:
+                if col != 'Lớp':
+                    df_tong_hop_all[col] = df_tong_hop_all[col].apply(hide_zero)
+
             # Hàm đổ màu thông minh cho thư viện Pandas
             def color_chenh_lech(val):
                 try:
+                    if val == "": return ''
                     v = float(val)
                     if v > 0: return 'color: #155724; background-color: #d4edda; font-weight: bold;' # Xanh lá
                     elif v < 0: return 'color: #721c24; background-color: #f8d7da; font-weight: bold;' # Đỏ
                 except: pass
                 return ''
 
-            # Áp dụng màu cho các cột có chứa ký tự "+/-"
             cot_can_to_mau = [c for c in df_tong_hop_all.columns if '+/-' in c]
             styled_df = df_tong_hop_all.style.map(color_chenh_lech, subset=cot_can_to_mau)
             
@@ -502,6 +514,14 @@ if gsheet_url:
             
             cols_to_show = ['Ten_Hoc_Sinh', 'Lop', 'ĐTB 10', 'ĐTB 11', 'ĐTB 12', 'UT', 'KK'] + mon_cols + ['Tổng 4 Môn', 'Điểm Xét TN', 'Kết quả TN'] + chon_to_hop
             df_wide_show = df_wide[cols_to_show]
+            
+            # Ẩn bớt số 0 ở Tab 5
+            def hide_zero_t5(val):
+                if pd.isna(val) or val == 0 or val == 0.0: return ""
+                return val
+            for col in df_wide_show.columns:
+                if col not in ['Ten_Hoc_Sinh', 'Lop', 'Kết quả TN']:
+                    df_wide_show[col] = df_wide_show[col].apply(hide_zero_t5)
             
             st.dataframe(df_wide_show, use_container_width=True, hide_index=True)
             
