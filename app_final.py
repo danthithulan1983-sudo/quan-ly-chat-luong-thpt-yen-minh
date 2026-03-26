@@ -70,14 +70,14 @@ def load_and_transform_data(url):
                 
             if c_mon.lower() in ["nan", "none", "unnamed", ""]: c_mon = ""
             
-            # Làm sạch tên môn, cắt bỏ "lần 1", "lần 2" dính trong file Excel
             c_mon_lower = c_mon.lower()
             is_fixed = False
             if c_mon_lower in ['tt', 'stt', 'sbd', 'họ tên', 'ngày sinh', 'lớp', 'trường', 'ghi chú', 'họ và tên', 'họ_và_tên', 'ngày_tháng_năm_sinh', 'lop', 'ten_hoc_sinh', 'phòng thi', 'phòng', 'mã hs']:
                 is_fixed = True
-            elif any(k in c_mon_lower for k in ['lớp 10', 'tb 10', 'đtb 10', 'tb10']): is_fixed = True
-            elif any(k in c_mon_lower for k in ['lớp 11', 'tb 11', 'đtb 11', 'tb11']): is_fixed = True
-            elif any(k in c_mon_lower for k in ['lớp 12', 'tb 12', 'đtb 12', 'tb12']): is_fixed = True
+            # Mở rộng nhận diện mọi cách viết tên cột của giáo viên
+            elif '10' in c_mon_lower and any(k in c_mon_lower for k in ['lớp', 'tb', 'đtb', 'cn', 'điểm']): is_fixed = True
+            elif '11' in c_mon_lower and any(k in c_mon_lower for k in ['lớp', 'tb', 'đtb', 'cn', 'điểm']): is_fixed = True
+            elif '12' in c_mon_lower and any(k in c_mon_lower for k in ['lớp', 'tb', 'đtb', 'cn', 'điểm']): is_fixed = True
             elif any(k in c_mon_lower for k in ['ưu tiên', 'uu tien', 'điểm ut']): is_fixed = True
             elif c_mon_lower == 'ut': is_fixed = True
             elif any(k in c_mon_lower for k in ['khuyến khích', 'khuyen khich', 'điểm kk']): is_fixed = True
@@ -111,21 +111,27 @@ def load_and_transform_data(url):
         df_doc['Diem_Thi'] = df_doc['_VAL_AI_']
             
         rename_dict = {}
+        mapped_targets = set()
         has_ten = False
         has_lop = False
         for col in df_doc.columns:
             cl = str(col).lower().replace("_", " ").strip()
+            target = None
             if not has_ten and ('tên' in cl or 'ten' in cl) and 'ưu tiên' not in cl:
-                rename_dict[col] = 'Ten_Hoc_Sinh'
+                target = 'Ten_Hoc_Sinh'
                 has_ten = True
             elif not has_lop and ('lớp' in cl or 'lop' in cl) and not any(x in cl for x in ['10', '11', '12']):
-                rename_dict[col] = 'Lop'
+                target = 'Lop'
                 has_lop = True
-            elif '10' in cl and any(x in cl for x in ['tb', 'lớp', 'điểm', 'đtb']): rename_dict[col] = 'TB_10'
-            elif '11' in cl and any(x in cl for x in ['tb', 'lớp', 'điểm', 'đtb']): rename_dict[col] = 'TB_11'
-            elif '12' in cl and any(x in cl for x in ['tb', 'lớp', 'điểm', 'đtb']): rename_dict[col] = 'TB_12'
-            elif 'ưu tiên' in cl or 'uu tien' in cl or cl == 'ut' or 'điểm ut' in cl: rename_dict[col] = 'Diem_UT'
-            elif 'khuyến khích' in cl or 'khuyen khich' in cl or cl == 'kk' or 'điểm kk' in cl: rename_dict[col] = 'Diem_KK'
+            elif '10' in cl and any(x in cl for x in ['tb', 'lớp', 'điểm', 'đtb', 'cn']): target = 'TB_10'
+            elif '11' in cl and any(x in cl for x in ['tb', 'lớp', 'điểm', 'đtb', 'cn']): target = 'TB_11'
+            elif '12' in cl and any(x in cl for x in ['tb', 'lớp', 'điểm', 'đtb', 'cn']): target = 'TB_12'
+            elif 'ưu tiên' in cl or 'uu tien' in cl or cl == 'ut' or 'điểm ut' in cl: target = 'Diem_UT'
+            elif 'khuyến khích' in cl or 'khuyen khich' in cl or cl == 'kk' or 'điểm kk' in cl: target = 'Diem_KK'
+            
+            if target and target not in mapped_targets:
+                rename_dict[col] = target
+                mapped_targets.add(target)
         
         df_doc = df_doc.rename(columns=rename_dict)
         if 'Lop' not in df_doc.columns: df_doc['Lop'] = "Khối Chung"
@@ -344,9 +350,7 @@ if gsheet_url:
                     st.markdown("#### 📝 Văn bản Tham mưu")
                     st.text_area("Khung Soạn thảo:", value=st.session_state.ai_ket_qua, height=300)
 
-        # ---------------------------------------------------------------------
-        # TAB 4: BẢNG TỔNG HỢP TOÀN DIỆN VỚI ĐIỂM ĐỐI CHIẾU
-        # ---------------------------------------------------------------------
+        # --- TAB 4 ---
         with tab4:
             st.markdown("#### 🏆 Bảng Xếp Hạng Tổng Hợp & Đánh giá Sự Tiến Bộ (Chi tiết)")
             st.info("💡 Bảng được làm sạch tên môn, có **Cột Điểm đối chiếu** của từng đợt và **+/- So với Chỉ tiêu**. Số 0 sẽ tự động ẩn đi để nhìn thoáng hơn.")
@@ -374,7 +378,6 @@ if gsheet_url:
                     '+/- Chỉ tiêu': round(tb_sau - chi_tieu_chung, 2) if pd.notna(tb_sau) else None
                 }
                 
-                # --- PHỤC HỒI LẠI ĐỦ 3 CỘT: LẦN TRƯỚC - LẦN SAU - CHÊNH LỆCH ---
                 for mon in ds_mon:
                     df_mon = df_lop[df_lop['Mon_Hoc'] == mon]
                     m_truoc = df_mon[df_mon['Lan_Thi'] == lan_truoc]['Diem_Thi'].mean()
@@ -429,12 +432,13 @@ if gsheet_url:
                     else: st.warning("🔒 Vui lòng đăng nhập quyền Quản trị!")
 
         # ---------------------------------------------------------------------
-        # TAB 5: XÉT TỐT NGHIỆP THPT & ĐẠI HỌC
+        # TAB 5: XÉT TỐT NGHIỆP THPT (FIX LỖI GHI ĐÈ ĐIỂM) & ĐẠI HỌC
         # ---------------------------------------------------------------------
         with tab5:
             st.markdown("#### 🎓 HỆ THỐNG XÉT TỐT NGHIỆP VÀ ĐẠI HỌC 2026")
             st.info("""
-            💡 Nếu file Excel CÓ nhập ĐTB 10, 11, 12, UT, KK: Máy sẽ tính riêng từng học sinh. Nếu bị trống, máy tự bù bằng các số giả lập bên dưới.
+            💡 **Minh bạch Dữ liệu:** Nếu cột ĐTB (hoặc UT, KK) đã tồn tại trong file Excel, máy tính tuyệt đối ưu tiên điểm thực tế. 
+            (Nếu giáo viên để trống ô điểm của học sinh, hệ thống sẽ tính là **0.0** thay vì bù bằng điểm giả lập để tránh việc ghi đè sai lệch).
             """)
             
             c_lan_tab5, c_t10, c_t11, c_t12, c_ut, c_kk = st.columns([1.5, 1, 1, 1, 1, 1])
@@ -447,20 +451,20 @@ if gsheet_url:
             
             df_dot = df_doc[df_doc['Lan_Thi'] == lan_tab5].copy()
             
-            if 'TB_10' in df_dot.columns: df_dot['TB_10_Thuc'] = df_dot['TB_10'].fillna(tb_lop10)
-            else: df_dot['TB_10_Thuc'] = tb_lop10
-            
-            if 'TB_11' in df_dot.columns: df_dot['TB_11_Thuc'] = df_dot['TB_11'].fillna(tb_lop11)
-            else: df_dot['TB_11_Thuc'] = tb_lop11
-            
-            if 'TB_12' in df_dot.columns: df_dot['TB_12_Thuc'] = df_dot['TB_12'].fillna(tb_lop12)
-            else: df_dot['TB_12_Thuc'] = tb_lop12
-            
-            if 'Diem_UT' in df_dot.columns: df_dot['UT_Thuc'] = df_dot['Diem_UT'].fillna(diem_ut)
-            else: df_dot['UT_Thuc'] = diem_ut
-            
-            if 'Diem_KK' in df_dot.columns: df_dot['KK_Thuc'] = df_dot['Diem_KK'].fillna(diem_kk)
-            else: df_dot['KK_Thuc'] = diem_kk
+            # --- FIX LOGIC BÙ ĐẮP DỮ LIỆU ---
+            # CÓ cột -> Tôn trọng dữ liệu thực tế. Trống (NaN) -> điền 0.0 (Không cho điểm khống).
+            # KHÔNG CÓ cột -> Lấy số giả lập ở trên bảng điều khiển.
+            for col_goc, mock_val, col_thuc in [
+                ('TB_10', tb_lop10, 'TB_10_Thuc'),
+                ('TB_11', tb_lop11, 'TB_11_Thuc'),
+                ('TB_12', tb_lop12, 'TB_12_Thuc'),
+                ('Diem_UT', diem_ut, 'UT_Thuc'),
+                ('Diem_KK', diem_kk, 'KK_Thuc')
+            ]:
+                if col_goc in df_dot.columns:
+                    df_dot[col_thuc] = df_dot[col_goc].fillna(0.0)
+                else:
+                    df_dot[col_thuc] = mock_val
 
             index_cols = ['Ten_Hoc_Sinh', 'Lop', 'TB_10_Thuc', 'TB_11_Thuc', 'TB_12_Thuc', 'UT_Thuc', 'KK_Thuc']
             
@@ -514,7 +518,15 @@ if gsheet_url:
             
             cac_cot_thong_tin_co = [c for c in ['TB_10', 'TB_11', 'TB_12', 'Diem_UT', 'Diem_KK'] if c in df_dot.columns]
             
-            cols_to_show = ['Ten_Hoc_Sinh', 'Lop', 'ĐTB 10', 'ĐTB 11', 'ĐTB 12', 'UT', 'KK'] + mon_cols + ['Tổng 4 Môn', 'Điểm Xét TN', 'Kết quả TN'] + chon_to_hop
+            # Cập nhật tên cột hiển thị
+            hien_thi_cols = []
+            if 'TB_10' in cac_cot_thong_tin_co: hien_thi_cols.append('ĐTB 10')
+            if 'TB_11' in cac_cot_thong_tin_co: hien_thi_cols.append('ĐTB 11')
+            if 'TB_12' in cac_cot_thong_tin_co: hien_thi_cols.append('ĐTB 12')
+            if 'Diem_UT' in cac_cot_thong_tin_co: hien_thi_cols.append('UT')
+            if 'Diem_KK' in cac_cot_thong_tin_co: hien_thi_cols.append('KK')
+
+            cols_to_show = ['Ten_Hoc_Sinh', 'Lop'] + hien_thi_cols + mon_cols + ['Tổng 4 Môn', 'Điểm Xét TN', 'Kết quả TN'] + chon_to_hop
             df_wide_show = df_wide[cols_to_show]
             
             def hide_zero_t5(val):
