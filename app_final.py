@@ -64,33 +64,28 @@ def load_and_transform_data(url):
         row_mon = df_raw.iloc[idx_mon].copy()
         
         # ==============================================================
-        # MỚI: AI TỰ ĐỘNG ĐỌC CHỈ TIÊU TỪ FILE EXCEL
+        # ĐỌC CHỈ TIÊU TỪ FILE EXCEL
         # ==============================================================
         chi_tieu_chung_val = 6.0
         dict_chi_tieu_mon = {}
         
-        # Quét 20 dòng đầu tiên để tìm dòng chữ "Chỉ tiêu"
         for i in range(min(20, len(df_raw))):
             row_vals = [str(x).strip().lower() for x in df_raw.iloc[i].values]
             row_str = " ".join(row_vals)
             
-            # 1. Tìm Chỉ tiêu chung (Ví dụ: "Chỉ tiêu chung: 6.5")
             match_chung = re.search(r'chỉ tiêu chung\s*[:\-\=]?\s*(\d+[\.,]\d+|\d+)', row_str)
             if match_chung:
                 chi_tieu_chung_val = float(match_chung.group(1).replace(',', '.'))
                 
-            # 2. Tìm Chỉ tiêu từng môn (Dòng có chữ "Chỉ tiêu" ở đầu)
-            if any('chỉ tiêu' in v for v in row_vals):
+            if any('chỉ tiêu' in v or 'chi tieu' in v for v in row_vals):
                 for j, val in enumerate(df_raw.iloc[i].values):
                     mon_name = str(row_mon.iloc[j]).strip()
-                    # Xác định đây là một cột môn học
                     if mon_name and mon_name.lower() not in ['tt', 'stt', 'sbd', 'họ tên', 'ngày sinh', 'lớp', 'trường', 'ghi chú', 'họ và tên', 'họ_và_tên', 'ngày_tháng_năm_sinh', 'lop', 'ten_hoc_sinh', 'phòng thi', 'phòng', 'mã hs'] and mon_name.lower() not in ['nan', 'none']:
                         try:
                             v_str = str(val).replace(',', '.').strip()
                             m = re.search(r'[-+]?\d*\.\d+|\d+', v_str)
                             if m:
                                 diem_ct = float(m.group())
-                                # Làm sạch tên môn để khớp với dữ liệu bên dưới
                                 c_mon_sach = re.sub(r'(?i)(lần|đợt)\s*\d+', '', mon_name).strip()
                                 c_mon_sach = re.sub(r'[\(\)]', '', c_mon_sach).strip()
                                 dict_chi_tieu_mon[c_mon_sach] = diem_ct
@@ -138,6 +133,12 @@ def load_and_transform_data(url):
         df_ngang = df_ngang.loc[:, mask_not_rac]
         df_ngang = df_ngang.loc[:, ~df_ngang.columns.duplicated()]
         
+        # ==============================================================
+        # FIX LỖI "HỌC SINH ẢO": TIÊU HỦY DÒNG CHỈ TIÊU KHỎI DỮ LIỆU
+        # ==============================================================
+        mask_chi_tieu = df_ngang.astype(str).apply(lambda x: x.str.lower().str.contains('chỉ tiêu|chi tieu')).any(axis=1)
+        df_ngang = df_ngang[~mask_chi_tieu].reset_index(drop=True)
+        
         cac_cot_thong_tin = [c for c in df_ngang.columns if '|' not in c]
         cac_cot_diem = [c for c in df_ngang.columns if '|' in c]
         
@@ -174,9 +175,6 @@ def load_and_transform_data(url):
         df_doc = df_doc.rename(columns=rename_dict)
         if 'Lop' not in df_doc.columns: df_doc['Lop'] = "Khối Chung"
         if 'Ten_Hoc_Sinh' not in df_doc.columns: df_doc['Ten_Hoc_Sinh'] = "Chưa rõ"
-        
-        # Dọn dẹp học sinh ảo "Chỉ tiêu" ra khỏi danh sách
-        df_doc = df_doc[~df_doc['Ten_Hoc_Sinh'].str.lower().str.contains('chỉ tiêu', na=False)]
         
         df_doc['Lop'] = df_doc['Lop'].fillna("Chưa rõ Lớp").astype(str).replace('nan', 'Chưa rõ Lớp').replace('', 'Chưa rõ Lớp')
         danh_sach_toan_bo_lop = sorted(list(df_doc['Lop'].unique()))
@@ -268,7 +266,6 @@ if gsheet_url:
         if dict_ct_mon_doc:
             st.caption(f"📌 *Chỉ tiêu riêng đã đọc từ Excel:* " + " | ".join([f"**{m}:** {d}" for m, d in dict_ct_mon_doc.items()]))
         
-        # Hàm linh hoạt lấy chỉ tiêu riêng của từng môn học
         def get_ct_mon(mon_hoc):
             return dict_ct_mon_doc.get(mon_hoc, chi_tieu_mon_fallback)
         
@@ -315,7 +312,7 @@ if gsheet_url:
                 df_t2 = tb_mon_cac_lan[['Lan_Thi', 'Điểm TB Môn', 'Chênh lệch']]
                 st.dataframe(df_t2, hide_index=True)
 
-        # --- TAB 3: TÍCH HỢP AI TƯ VẤN CỤ THỂ ---
+        # --- TAB 3 ---
         with tab3:
             cc1, cc2 = st.columns(2)
             with cc1: chon_mon = st.selectbox("Chọn Môn học:", ds_mon, key='mon_tab3')
@@ -402,10 +399,10 @@ if gsheet_url:
                     st.markdown("#### 💡 Giải pháp Nâng cao Chất lượng (AI Đề xuất)")
                     st.info(st.session_state.ai_ket_qua_t3)
 
-        # --- TAB 4: BẢNG TỔNG HỢP VÀ AI ĐÁNH GIÁ TOÀN TRƯỜNG ---
+        # --- TAB 4 ---
         with tab4:
             st.markdown("#### 🏆 Bảng Xếp Hạng Tổng Hợp & Đánh giá Sự Tiến Bộ (Chi tiết)")
-            st.info("💡 Bảng được làm sạch tên môn, hiển thị 3 cột/môn: `Điểm Lần trước` | `Điểm Lần sau` | `+/- Chênh lệch`. Các số 0 sẽ tự động ẩn để bảng sạch sẽ, dễ nhìn.")
+            st.info("💡 Bảng được làm sạch tên môn, có **Cột Điểm đối chiếu** của từng đợt và **+/- So với Chỉ tiêu**. Số 0 sẽ tự động ẩn đi để nhìn thoáng hơn.")
             
             c_lan1, c_lan2 = st.columns(2)
             with c_lan1: lan_truoc = st.selectbox("So sánh từ:", ds_lan_thi, index=0, key='lan_truoc_t4')
