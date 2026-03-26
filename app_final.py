@@ -37,12 +37,11 @@ with col_giua:
 st.markdown("<hr style='border: 0; height: 1px; background-image: linear-gradient(to right, rgba(0,0,0,0), rgba(0,0,0,0.1), rgba(0,0,0,0)); margin-bottom: 30px;'>", unsafe_allow_html=True)
 
 # ==========================================
-# 1. CÁC HÀM XỬ LÝ LÕI ĐỌC DỮ LIỆU CHỐNG LỖI MẠNH MẼ
+# 1. CÁC HÀM XỬ LÝ LÕI ĐỌC DỮ LIỆU
 # ==========================================
 @st.cache_data(ttl=10)
 def load_and_transform_data(url):
     try:
-        # 1. ÉP GOOGLE SHEETS TRẢ VỀ DỮ LIỆU GỐC (BỎ QUA BỘ LỌC CỦA GOOGLE)
         file_id = url.split("/d/")[1].split("/")[0]
         export_url = f"https://docs.google.com/spreadsheets/d/{file_id}/export?format=csv"
         if "gid=" in url:
@@ -64,6 +63,40 @@ def load_and_transform_data(url):
         row_lan = df_raw.iloc[idx_lan].copy()
         row_mon = df_raw.iloc[idx_mon].copy()
         
+        # ==============================================================
+        # MỚI: AI TỰ ĐỘNG ĐỌC CHỈ TIÊU TỪ FILE EXCEL
+        # ==============================================================
+        chi_tieu_chung_val = 6.0
+        dict_chi_tieu_mon = {}
+        
+        # Quét 20 dòng đầu tiên để tìm dòng chữ "Chỉ tiêu"
+        for i in range(min(20, len(df_raw))):
+            row_vals = [str(x).strip().lower() for x in df_raw.iloc[i].values]
+            row_str = " ".join(row_vals)
+            
+            # 1. Tìm Chỉ tiêu chung (Ví dụ: "Chỉ tiêu chung: 6.5")
+            match_chung = re.search(r'chỉ tiêu chung\s*[:\-\=]?\s*(\d+[\.,]\d+|\d+)', row_str)
+            if match_chung:
+                chi_tieu_chung_val = float(match_chung.group(1).replace(',', '.'))
+                
+            # 2. Tìm Chỉ tiêu từng môn (Dòng có chữ "Chỉ tiêu" ở đầu)
+            if any('chỉ tiêu' in v for v in row_vals):
+                for j, val in enumerate(df_raw.iloc[i].values):
+                    mon_name = str(row_mon.iloc[j]).strip()
+                    # Xác định đây là một cột môn học
+                    if mon_name and mon_name.lower() not in ['tt', 'stt', 'sbd', 'họ tên', 'ngày sinh', 'lớp', 'trường', 'ghi chú', 'họ và tên', 'họ_và_tên', 'ngày_tháng_năm_sinh', 'lop', 'ten_hoc_sinh', 'phòng thi', 'phòng', 'mã hs'] and mon_name.lower() not in ['nan', 'none']:
+                        try:
+                            v_str = str(val).replace(',', '.').strip()
+                            m = re.search(r'[-+]?\d*\.\d+|\d+', v_str)
+                            if m:
+                                diem_ct = float(m.group())
+                                # Làm sạch tên môn để khớp với dữ liệu bên dưới
+                                c_mon_sach = re.sub(r'(?i)(lần|đợt)\s*\d+', '', mon_name).strip()
+                                c_mon_sach = re.sub(r'[\(\)]', '', c_mon_sach).strip()
+                                dict_chi_tieu_mon[c_mon_sach] = diem_ct
+                        except: pass
+        # ==============================================================
+        
         active_lan = "Lần 1"
         new_cols = []
         
@@ -80,9 +113,9 @@ def load_and_transform_data(url):
             is_fixed = False
             if c_mon_lower in ['tt', 'stt', 'sbd', 'họ tên', 'ngày sinh', 'lớp', 'trường', 'ghi chú', 'họ và tên', 'họ_và_tên', 'ngày_tháng_năm_sinh', 'lop', 'ten_hoc_sinh', 'phòng thi', 'phòng', 'mã hs']:
                 is_fixed = True
-            elif any(k in c_mon_lower for k in ['lớp 10', 'tb 10', 'đtb 10', 'tb10']): is_fixed = True
-            elif any(k in c_mon_lower for k in ['lớp 11', 'tb 11', 'đtb 11', 'tb11']): is_fixed = True
-            elif any(k in c_mon_lower for k in ['lớp 12', 'tb 12', 'đtb 12', 'tb12']): is_fixed = True
+            elif '10' in c_mon_lower and any(k in c_mon_lower for k in ['lớp', 'tb', 'đtb', 'cn', 'điểm']): is_fixed = True
+            elif '11' in c_mon_lower and any(k in c_mon_lower for k in ['lớp', 'tb', 'đtb', 'cn', 'điểm']): is_fixed = True
+            elif '12' in c_mon_lower and any(k in c_mon_lower for k in ['lớp', 'tb', 'đtb', 'cn', 'điểm']): is_fixed = True
             elif any(k in c_mon_lower for k in ['ưu tiên', 'uu tien', 'điểm ut']): is_fixed = True
             elif c_mon_lower == 'ut': is_fixed = True
             elif any(k in c_mon_lower for k in ['khuyến khích', 'khuyen khich', 'điểm kk']): is_fixed = True
@@ -142,6 +175,9 @@ def load_and_transform_data(url):
         if 'Lop' not in df_doc.columns: df_doc['Lop'] = "Khối Chung"
         if 'Ten_Hoc_Sinh' not in df_doc.columns: df_doc['Ten_Hoc_Sinh'] = "Chưa rõ"
         
+        # Dọn dẹp học sinh ảo "Chỉ tiêu" ra khỏi danh sách
+        df_doc = df_doc[~df_doc['Ten_Hoc_Sinh'].str.lower().str.contains('chỉ tiêu', na=False)]
+        
         df_doc['Lop'] = df_doc['Lop'].fillna("Chưa rõ Lớp").astype(str).replace('nan', 'Chưa rõ Lớp').replace('', 'Chưa rõ Lớp')
         danh_sach_toan_bo_lop = sorted(list(df_doc['Lop'].unique()))
         
@@ -151,7 +187,6 @@ def load_and_transform_data(url):
             
         df_clean = df_doc[cols_to_keep].copy()
         
-        # 2. HÀM MÁY HÚT BỤI: QUÉT SẠCH KÝ TỰ RÁC, GIỮ LẠI ĐÚNG SỐ ĐIỂM
         def extract_float(val):
             if pd.isna(val): return None
             s = str(val).replace(',', '.').strip()
@@ -160,16 +195,15 @@ def load_and_transform_data(url):
             if m: return float(m.group())
             return None
 
-        # Làm sạch 100% cột điểm cá nhân và điểm thi
         for col in ['TB_10', 'TB_11', 'TB_12', 'Diem_UT', 'Diem_KK', 'Diem_Thi']:
             if col in df_clean.columns:
                 df_clean[col] = df_clean[col].apply(extract_float)
 
         df_clean = df_clean.dropna(subset=['Diem_Thi', 'Mon_Hoc', 'Lan_Thi'])
         
-        return df_clean, danh_sach_toan_bo_lop, None
+        return df_clean, danh_sach_toan_bo_lop, chi_tieu_chung_val, dict_chi_tieu_mon, None
     except Exception as e:
-        return None, None, f"🛑 Lỗi đọc dữ liệu: {e}"
+        return None, None, 6.0, {}, f"🛑 Lỗi đọc dữ liệu: {e}"
 
 def ghi_ket_qua_len_sheet(df_ket_qua, link_sheet, ten_sheet_dich="Bao_Cao_AI"):
     try:
@@ -213,7 +247,7 @@ with st.sidebar:
 # 3. LUỒNG PHÂN TÍCH CHÍNH & 5 TAB BÁO CÁO
 # ==========================================
 if gsheet_url:
-    df_doc, list_all_classes, err = load_and_transform_data(gsheet_url)
+    df_doc, list_all_classes, ct_chung_doc, dict_ct_mon_doc, err = load_and_transform_data(gsheet_url)
     if err:
         st.error(err)
     elif df_doc.empty:
@@ -223,9 +257,20 @@ if gsheet_url:
         ds_mon = sorted(df_doc['Mon_Hoc'].unique())
         
         st.markdown("### 🎯 THIẾT LẬP CHỈ TIÊU KỲ VỌNG")
+        st.info("🤖 **Tính năng Nhận diện Tự động:** Hệ thống đã tự động quét dòng 'Chỉ tiêu' từ file Excel. Bạn hoàn toàn có thể tinh chỉnh lại ở bảng dưới đây:")
+        
         c1, c2 = st.columns(2)
-        with c1: chi_tieu_chung = st.number_input("📈 Chỉ tiêu Điểm TB Chung (Toàn khối):", value=6.0, step=0.1)
-        with c2: chi_tieu_mon = st.number_input("🎯 Chỉ tiêu Điểm TB Bộ môn:", value=6.5, step=0.1)
+        with c1: 
+            chi_tieu_chung = st.number_input("📈 Chỉ tiêu Điểm TB Chung (Toàn khối):", value=float(ct_chung_doc), step=0.1)
+        with c2: 
+            chi_tieu_mon_fallback = st.number_input("🎯 Chỉ tiêu Môn mặc định (nếu Excel bị sót môn):", value=6.5, step=0.1)
+            
+        if dict_ct_mon_doc:
+            st.caption(f"📌 *Chỉ tiêu riêng đã đọc từ Excel:* " + " | ".join([f"**{m}:** {d}" for m, d in dict_ct_mon_doc.items()]))
+        
+        # Hàm linh hoạt lấy chỉ tiêu riêng của từng môn học
+        def get_ct_mon(mon_hoc):
+            return dict_ct_mon_doc.get(mon_hoc, chi_tieu_mon_fallback)
         
         st.markdown("<br>", unsafe_allow_html=True)
         
@@ -246,17 +291,13 @@ if gsheet_url:
             
             df_t1 = tb_khoi_cac_lan[['Lan_Thi', 'Điểm TB Chung', 'Chỉ tiêu Giao', 'Chênh lệch']]
             st.dataframe(df_t1, use_container_width=True, hide_index=True)
-            
-            if st.button("🚀 XUẤT LÊN GOOGLE SHEETS", type="primary", key="btn_g1"):
-                if is_admin:
-                    thanh_cong, msg = ghi_ket_qua_len_sheet(df_t1, gsheet_url, "Tổng quan Chung")
-                    if thanh_cong: st.success(msg)
-                    else: st.error(msg)
-                else: st.warning("🔒 Vui lòng đăng nhập quyền Quản trị!")
 
         # --- TAB 2 ---
         with tab2:
             chon_mon_tab2 = st.selectbox("🔍 Chọn Môn học để xem tiến trình:", ds_mon, key='mon_tab2')
+            
+            ct_mon_hien_tai = get_ct_mon(chon_mon_tab2)
+            
             df_mon_tien_trinh = df_doc[df_doc['Mon_Hoc'] == chon_mon_tab2]
             tb_mon_cac_lan = df_mon_tien_trinh.groupby('Lan_Thi')['Diem_Thi'].mean().reset_index()
             tb_mon_cac_lan['Điểm TB Môn'] = tb_mon_cac_lan['Diem_Thi'].round(2)
@@ -264,28 +305,23 @@ if gsheet_url:
             c_bieudo, c_bang = st.columns([2, 1])
             with c_bieudo:
                 fig_mon = px.bar(tb_mon_cac_lan, x='Lan_Thi', y='Điểm TB Môn', text='Điểm TB Môn', color='Lan_Thi', color_discrete_sequence=px.colors.qualitative.Set2)
-                fig_mon.add_hline(y=chi_tieu_mon, line_dash="dash", line_color="red", annotation_text="Chỉ tiêu môn")
+                fig_mon.add_hline(y=ct_mon_hien_tai, line_dash="dash", line_color="red", annotation_text=f"Chỉ tiêu ({ct_mon_hien_tai})")
                 fig_mon.update_traces(textposition='outside')
                 st.plotly_chart(fig_mon, use_container_width=True)
             with c_bang:
                 st.markdown("<br><br>", unsafe_allow_html=True)
-                tb_mon_cac_lan['Chỉ tiêu Môn'] = chi_tieu_mon
-                tb_mon_cac_lan['Chênh lệch'] = (tb_mon_cac_lan['Điểm TB Môn'] - chi_tieu_mon).round(2)
+                tb_mon_cac_lan['Chỉ tiêu Môn'] = ct_mon_hien_tai
+                tb_mon_cac_lan['Chênh lệch'] = (tb_mon_cac_lan['Điểm TB Môn'] - ct_mon_hien_tai).round(2)
                 df_t2 = tb_mon_cac_lan[['Lan_Thi', 'Điểm TB Môn', 'Chênh lệch']]
                 st.dataframe(df_t2, hide_index=True)
-                
-                if st.button("🚀 XUẤT LÊN GOOGLE SHEETS", type="primary", use_container_width=True, key="btn_g2"):
-                    if is_admin:
-                        thanh_cong, msg = ghi_ket_qua_len_sheet(df_t2, gsheet_url, f"Tiến trình {chon_mon_tab2}")
-                        if thanh_cong: st.success(msg)
-                        else: st.error(msg)
-                    else: st.warning("🔒 Vui lòng đăng nhập quyền Quản trị!")
 
-        # --- TAB 3 ---
+        # --- TAB 3: TÍCH HỢP AI TƯ VẤN CỤ THỂ ---
         with tab3:
             cc1, cc2 = st.columns(2)
             with cc1: chon_mon = st.selectbox("Chọn Môn học:", ds_mon, key='mon_tab3')
             with cc2: chon_lan = st.selectbox("Chọn Đợt thi:", ds_lan_thi, key='lan_tab3')
+            
+            ct_mon_tab3 = get_ct_mon(chon_mon)
             
             df_hien_tai = df_doc[(df_doc['Mon_Hoc'] == chon_mon) & (df_doc['Lan_Thi'] == chon_lan)].copy()
             if not df_hien_tai.empty:
@@ -306,7 +342,7 @@ if gsheet_url:
                     bao_cao_list.append({
                         'Lớp': lop, 'Sĩ số': si_so, 
                         'Điểm TB': round(dtb, 2) if pd.notna(dtb) else None, 
-                        'Chênh lệch CT': round(dtb - chi_tieu_mon, 2) if pd.notna(dtb) else None
+                        'Chênh lệch CT': round(dtb - ct_mon_tab3, 2) if pd.notna(dtb) else None
                     })
                 
                 df_bao_cao = pd.DataFrame(bao_cao_list).sort_values(by='Điểm TB', ascending=False, na_position='last').reset_index(drop=True)
@@ -321,7 +357,7 @@ if gsheet_url:
                     df_tong_hop[c] = df_tong_hop[c].apply(clean_zero)
                 
                 tb_khoi = df_hien_tai['Diem_Thi'].mean()
-                d_toan_khoi = {'Xếp hạng': '-', 'Lớp': '⭐ TOÀN KHỐI', 'Sĩ số': len(df_hien_tai), 'Điểm TB': round(tb_khoi, 2), 'Chênh lệch CT': round(tb_khoi - chi_tieu_mon, 2)}
+                d_toan_khoi = {'Xếp hạng': '-', 'Lớp': '⭐ TOÀN KHỐI', 'Sĩ số': len(df_hien_tai), 'Điểm TB': round(tb_khoi, 2), 'Chênh lệch CT': round(tb_khoi - ct_mon_tab3, 2)}
                 for col in labels: d_toan_khoi[col] = dong_toan_khoi_pd[col].values[0]
                 df_tong_hop.loc[len(df_tong_hop)-1] = d_toan_khoi 
 
@@ -341,30 +377,35 @@ if gsheet_url:
                             else: st.error(msg)
                         else: st.warning("🔒 Vui lòng đăng nhập quyền Quản trị!")
                 with c_btn3:
-                    if st.button("🤖 AI Tham mưu Báo cáo", type="primary", use_container_width=True, key="btn_ai_t3"):
+                    if st.button("🤖 AI TƯ VẤN & ĐỀ XUẤT GIẢI PHÁP", type="primary", use_container_width=True, key="btn_ai_t3"):
                         if is_admin:
-                            with st.spinner("Đang phân tích phổ điểm..."):
+                            with st.spinner("Đang phân tích phổ điểm và lập kế hoạch chiến lược..."):
                                 try:
                                     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
                                     cac_model = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
                                     model = genai.GenerativeModel(next((m for m in cac_model if 'flash' in m), cac_model[0]))
                                     prompt = f"""
-                                    Phân tích kết quả môn {chon_mon} đợt {chon_lan}. Bảng điểm chi tiết:
+                                    Đóng vai trò là Chuyên gia Cố vấn Giáo dục. Hãy phân tích kết quả thi môn {chon_mon} đợt {chon_lan} dựa trên bảng số liệu sau:
                                     {df_tong_hop.to_string(index=False)}
-                                    Viết báo cáo đánh giá sự chênh lệch giữa các lớp, nhận diện lớp yếu kém, điểm liệt và đề xuất giải pháp.
+                                    Chỉ tiêu kỳ vọng của môn này là {ct_mon_tab3}.
+                                    Yêu cầu phân tích:
+                                    1. Nhận diện các lớp đang dẫn đầu và các lớp đang ở nhóm rủi ro cao (yếu kém, nhiều điểm liệt).
+                                    2. Đánh giá mức độ đạt chỉ tiêu của toàn khối.
+                                    3. ĐƯA RA GIẢI PHÁP CHIẾN LƯỢC VÀ THỰC TẾ: Đề xuất các phương pháp bồi dưỡng, phụ đạo, hoặc thay đổi cách ôn tập để nâng cao chất lượng trong thời gian tới.
+                                    Trình bày mạch lạc, sử dụng bullet points để dễ theo dõi.
                                     """
-                                    st.session_state.ai_ket_qua = model.generate_content(prompt).text
+                                    st.session_state.ai_ket_qua_t3 = model.generate_content(prompt).text
                                 except Exception as e: st.error(f"Lỗi AI: {e}")
                         else: st.warning("🔒 Cần quyền Quản trị để dùng AI!")
                         
-                if "ai_ket_qua" in st.session_state and st.session_state.ai_ket_qua != "":
-                    st.markdown("#### 📝 Văn bản Tham mưu")
-                    st.text_area("Khung Soạn thảo:", value=st.session_state.ai_ket_qua, height=300)
+                if "ai_ket_qua_t3" in st.session_state and st.session_state.ai_ket_qua_t3 != "":
+                    st.markdown("#### 💡 Giải pháp Nâng cao Chất lượng (AI Đề xuất)")
+                    st.info(st.session_state.ai_ket_qua_t3)
 
-        # --- TAB 4 ---
+        # --- TAB 4: BẢNG TỔNG HỢP VÀ AI ĐÁNH GIÁ TOÀN TRƯỜNG ---
         with tab4:
             st.markdown("#### 🏆 Bảng Xếp Hạng Tổng Hợp & Đánh giá Sự Tiến Bộ (Chi tiết)")
-            st.info("💡 Bảng được làm sạch tên môn, có **Cột Điểm đối chiếu** của từng đợt và **+/- So với Chỉ tiêu**. Số 0 sẽ tự động ẩn đi để nhìn thoáng hơn.")
+            st.info("💡 Bảng được làm sạch tên môn, hiển thị 3 cột/môn: `Điểm Lần trước` | `Điểm Lần sau` | `+/- Chênh lệch`. Các số 0 sẽ tự động ẩn để bảng sạch sẽ, dễ nhìn.")
             
             c_lan1, c_lan2 = st.columns(2)
             with c_lan1: lan_truoc = st.selectbox("So sánh từ:", ds_lan_thi, index=0, key='lan_truoc_t4')
@@ -428,7 +469,7 @@ if gsheet_url:
             
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
-            c_x1, c_x2 = st.columns(2)
+            c_x1, c_x2, c_x3 = st.columns(3)
             with c_x1:
                 buffer_all = io.BytesIO()
                 with pd.ExcelWriter(buffer_all, engine='xlsxwriter') as writer:
@@ -441,6 +482,30 @@ if gsheet_url:
                         if thanh_cong: st.success(msg)
                         else: st.error(msg)
                     else: st.warning("🔒 Vui lòng đăng nhập quyền Quản trị!")
+            with c_x3:
+                if st.button("🤖 AI PHÂN TÍCH TOÀN TRƯỜNG", type="primary", use_container_width=True, key="btn_ai_t4"):
+                    if is_admin:
+                        with st.spinner("Đang đánh giá sự tiến bộ của toàn trường..."):
+                            try:
+                                genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+                                cac_model = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                                model = genai.GenerativeModel(next((m for m in cac_model if 'flash' in m), cac_model[0]))
+                                prompt = f"""
+                                Đóng vai trò là Hiệu trưởng phụ trách chuyên môn. Hãy phân tích bảng dữ liệu tổng hợp sự tiến bộ của toàn trường giữa 2 đợt thi:
+                                {df_tong_hop_all.to_string(index=False)}
+                                Yêu cầu:
+                                1. Nhận xét tổng quan chất lượng toàn khối.
+                                2. Vinh danh các tập thể lớp có sự bứt phá, tiến bộ mạnh mẽ (+/- tăng cao).
+                                3. Cảnh báo các lớp và các môn học đang có dấu hiệu tụt dốc.
+                                4. ĐỀ XUẤT CÁC GIẢI PHÁP QUẢN TRỊ, ĐIỀU HÀNH ĐỂ KHẮC PHỤC ĐIỂM NGHẼN, NÂNG CAO CHẤT LƯỢNG TRONG ĐỢT THI TỚI.
+                                """
+                                st.session_state.ai_ket_qua_t4 = model.generate_content(prompt).text
+                            except Exception as e: st.error(f"Lỗi AI: {e}")
+                    else: st.warning("🔒 Cần quyền Quản trị để dùng AI!")
+                        
+            if "ai_ket_qua_t4" in st.session_state and st.session_state.ai_ket_qua_t4 != "":
+                st.markdown("#### 💡 Cố vấn Quản trị Chất lượng (AI Đề xuất)")
+                st.info(st.session_state.ai_ket_qua_t4)
 
         # ---------------------------------------------------------------------
         # TAB 5: XÉT TỐT NGHIỆP THPT (FIX LỖI GHI ĐÈ ĐIỂM) & ĐẠI HỌC
