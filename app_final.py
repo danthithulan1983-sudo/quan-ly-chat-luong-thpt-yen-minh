@@ -11,6 +11,7 @@ import docx
 from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 import re
+import numpy as np
 
 # Cấu hình tab trình duyệt
 st.set_page_config(page_title="Quản trị KHTN 2026 - THPT Yên Minh", page_icon="🎓", layout="wide")
@@ -36,13 +37,18 @@ with col_giua:
 st.markdown("<hr style='border: 0; height: 1px; background-image: linear-gradient(to right, rgba(0,0,0,0), rgba(0,0,0,0.1), rgba(0,0,0,0)); margin-bottom: 30px;'>", unsafe_allow_html=True)
 
 # ==========================================
-# 1. CÁC HÀM XỬ LÝ LÕI ĐỌC DỮ LIỆU
+# 1. CÁC HÀM XỬ LÝ LÕI ĐỌC DỮ LIỆU CHỐNG LỖI MẠNH MẼ
 # ==========================================
 @st.cache_data(ttl=10)
 def load_and_transform_data(url):
     try:
+        # 1. ÉP GOOGLE SHEETS TRẢ VỀ DỮ LIỆU GỐC (BỎ QUA BỘ LỌC CỦA GOOGLE)
         file_id = url.split("/d/")[1].split("/")[0]
-        export_url = f"https://docs.google.com/spreadsheets/d/{file_id}/gviz/tq?tqx=out:csv"
+        export_url = f"https://docs.google.com/spreadsheets/d/{file_id}/export?format=csv"
+        if "gid=" in url:
+            gid = url.split("gid=")[1].split("&")[0]
+            export_url += f"&gid={gid}"
+            
         df_raw = pd.read_csv(export_url, header=None)
         
         idx_mon = -1
@@ -74,10 +80,9 @@ def load_and_transform_data(url):
             is_fixed = False
             if c_mon_lower in ['tt', 'stt', 'sbd', 'họ tên', 'ngày sinh', 'lớp', 'trường', 'ghi chú', 'họ và tên', 'họ_và_tên', 'ngày_tháng_năm_sinh', 'lop', 'ten_hoc_sinh', 'phòng thi', 'phòng', 'mã hs']:
                 is_fixed = True
-            # Mở rộng nhận diện mọi cách viết tên cột của giáo viên
-            elif '10' in c_mon_lower and any(k in c_mon_lower for k in ['lớp', 'tb', 'đtb', 'cn', 'điểm']): is_fixed = True
-            elif '11' in c_mon_lower and any(k in c_mon_lower for k in ['lớp', 'tb', 'đtb', 'cn', 'điểm']): is_fixed = True
-            elif '12' in c_mon_lower and any(k in c_mon_lower for k in ['lớp', 'tb', 'đtb', 'cn', 'điểm']): is_fixed = True
+            elif any(k in c_mon_lower for k in ['lớp 10', 'tb 10', 'đtb 10', 'tb10']): is_fixed = True
+            elif any(k in c_mon_lower for k in ['lớp 11', 'tb 11', 'đtb 11', 'tb11']): is_fixed = True
+            elif any(k in c_mon_lower for k in ['lớp 12', 'tb 12', 'đtb 12', 'tb12']): is_fixed = True
             elif any(k in c_mon_lower for k in ['ưu tiên', 'uu tien', 'điểm ut']): is_fixed = True
             elif c_mon_lower == 'ut': is_fixed = True
             elif any(k in c_mon_lower for k in ['khuyến khích', 'khuyen khich', 'điểm kk']): is_fixed = True
@@ -146,15 +151,21 @@ def load_and_transform_data(url):
             
         df_clean = df_doc[cols_to_keep].copy()
         
-        for col in ['TB_10', 'TB_11', 'TB_12', 'Diem_UT', 'Diem_KK']:
+        # 2. HÀM MÁY HÚT BỤI: QUÉT SẠCH KÝ TỰ RÁC, GIỮ LẠI ĐÚNG SỐ ĐIỂM
+        def extract_float(val):
+            if pd.isna(val): return None
+            s = str(val).replace(',', '.').strip()
+            if s.lower() in ['', 'nan', 'none', 'null']: return None
+            m = re.search(r'[-+]?\d*\.\d+|\d+', s)
+            if m: return float(m.group())
+            return None
+
+        # Làm sạch 100% cột điểm cá nhân và điểm thi
+        for col in ['TB_10', 'TB_11', 'TB_12', 'Diem_UT', 'Diem_KK', 'Diem_Thi']:
             if col in df_clean.columns:
-                df_clean[col] = df_clean[col].astype(str).str.replace(',', '.')
-                df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce')
+                df_clean[col] = df_clean[col].apply(extract_float)
 
         df_clean = df_clean.dropna(subset=['Diem_Thi', 'Mon_Hoc', 'Lan_Thi'])
-        df_clean['Diem_Thi'] = df_clean['Diem_Thi'].astype(str).str.replace(',', '.')
-        df_clean['Diem_Thi'] = pd.to_numeric(df_clean['Diem_Thi'], errors='coerce')
-        df_clean = df_clean.dropna(subset=['Diem_Thi'])
         
         return df_clean, danh_sach_toan_bo_lop, None
     except Exception as e:
@@ -451,9 +462,6 @@ if gsheet_url:
             
             df_dot = df_doc[df_doc['Lan_Thi'] == lan_tab5].copy()
             
-            # --- FIX LOGIC BÙ ĐẮP DỮ LIỆU ---
-            # CÓ cột -> Tôn trọng dữ liệu thực tế. Trống (NaN) -> điền 0.0 (Không cho điểm khống).
-            # KHÔNG CÓ cột -> Lấy số giả lập ở trên bảng điều khiển.
             for col_goc, mock_val, col_thuc in [
                 ('TB_10', tb_lop10, 'TB_10_Thuc'),
                 ('TB_11', tb_lop11, 'TB_11_Thuc'),
@@ -518,7 +526,6 @@ if gsheet_url:
             
             cac_cot_thong_tin_co = [c for c in ['TB_10', 'TB_11', 'TB_12', 'Diem_UT', 'Diem_KK'] if c in df_dot.columns]
             
-            # Cập nhật tên cột hiển thị
             hien_thi_cols = []
             if 'TB_10' in cac_cot_thong_tin_co: hien_thi_cols.append('ĐTB 10')
             if 'TB_11' in cac_cot_thong_tin_co: hien_thi_cols.append('ĐTB 11')
