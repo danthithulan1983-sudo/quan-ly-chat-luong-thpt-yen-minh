@@ -133,7 +133,7 @@ def load_and_transform_data(url):
         df_ngang = df_ngang.loc[:, mask_not_rac]
         df_ngang = df_ngang.loc[:, ~df_ngang.columns.duplicated()]
         
-        # Xóa dòng nếu có gõ rõ chữ "chỉ tiêu"
+        # Tiêu hủy dòng chỉ tiêu để tránh lọt vào dữ liệu
         mask_chi_tieu = df_ngang.astype(str).apply(lambda x: x.str.lower().str.contains('chỉ tiêu|chi tieu')).any(axis=1)
         df_ngang = df_ngang[~mask_chi_tieu].reset_index(drop=True)
         
@@ -177,27 +177,17 @@ def load_and_transform_data(url):
         df_doc['Lop'] = df_doc['Lop'].fillna("Chưa rõ Lớp").astype(str).replace('nan', 'Chưa rõ Lớp').replace('', 'Chưa rõ Lớp')
         df_doc['Ten_Hoc_Sinh'] = df_doc['Ten_Hoc_Sinh'].fillna("Chưa rõ").astype(str).replace('nan', 'Chưa rõ').replace('', 'Chưa rõ')
         
-        # ==============================================================
-        # BỘ LỌC ĐỘC QUYỀN: TIÊU DIỆT "HỌC SINH ẢO" VÀ "HÀNG CHỈ TIÊU" KHUYẾT DANH
-        # ==============================================================
         def is_hoc_sinh_that(row):
             ten = str(row['Ten_Hoc_Sinh']).lower().strip()
             lop = str(row['Lop']).lower().strip()
-            
-            # Nếu vừa không có Tên vừa không có Lớp => Chắc chắn là dòng rác (hoặc dòng ghi chỉ tiêu mà GV quên gõ tên)
             if (ten in ['', 'nan', 'none', 'chưa rõ']) and (lop in ['', 'nan', 'none', 'chưa rõ lớp']):
                 return False
-                
-            # Nếu tên chứa các từ khóa chuyên dụng ở cuối file
             tu_khoa = ['chỉ tiêu', 'chi tieu', 'trung bình', 'tổng cộng', 'tổng điểm']
             if any(k in ten for k in tu_khoa):
                 return False
-                
             return True
             
         df_doc = df_doc[df_doc.apply(is_hoc_sinh_that, axis=1)].reset_index(drop=True)
-        # ==============================================================
-        
         danh_sach_toan_bo_lop = sorted(list(df_doc['Lop'].unique()))
         
         cols_to_keep = ['Ten_Hoc_Sinh', 'Lop', 'Mon_Hoc', 'Lan_Thi', 'Diem_Thi']
@@ -391,7 +381,9 @@ if gsheet_url:
                 tb_khoi = df_hien_tai['Diem_Thi'].mean()
                 d_toan_khoi = {'Xếp hạng': '-', 'Lớp': '⭐ TOÀN KHỐI', 'Sĩ số': len(df_hien_tai), 'Điểm TB': round(tb_khoi, 2), 'Chênh lệch CT': round(tb_khoi - ct_mon_tab3, 2)}
                 for col in labels: d_toan_khoi[col] = dong_toan_khoi_pd[col].values[0]
-                df_tong_hop.loc[len(df_tong_hop)-1] = d_toan_khoi 
+                
+                # SỬA LỖI Ở ĐÂY: GHI THÊM DÒNG MỚI (APPEND) THAY VÌ GHI ĐÈ (-1)
+                df_tong_hop.loc[len(df_tong_hop)] = d_toan_khoi 
 
                 st.dataframe(df_tong_hop, use_container_width=True, hide_index=True)
 
@@ -537,7 +529,7 @@ if gsheet_url:
                 st.info(st.session_state.ai_ket_qua_t4)
 
         # ---------------------------------------------------------------------
-        # TAB 5: XÉT TỐT NGHIỆP THPT & ĐẠI HỌC
+        # TAB 5: XÉT TỐT NGHIỆP THPT (FIX LỖI GHI ĐÈ ĐIỂM) & ĐẠI HỌC
         # ---------------------------------------------------------------------
         with tab5:
             st.markdown("#### 🎓 HỆ THỐNG XÉT TỐT NGHIỆP VÀ ĐẠI HỌC 2026")
