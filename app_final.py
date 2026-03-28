@@ -37,8 +37,36 @@ with col_giua:
 st.markdown("<hr style='border: 0; height: 1px; background-image: linear-gradient(to right, rgba(0,0,0,0), rgba(0,0,0,0.1), rgba(0,0,0,0)); margin-bottom: 30px;'>", unsafe_allow_html=True)
 
 # ==========================================
-# 1. CÁC HÀM XỬ LÝ LÕI ĐỌC DỮ LIỆU
+# 1. CÁC HÀM XỬ LÝ LÕI ĐỌC DỮ LIỆU & TẠO FILE WORD
 # ==========================================
+def tao_file_word(noi_dung_ai, tieu_de_bao_cao):
+    """Hàm tạo file Word từ văn bản AI sinh ra"""
+    doc = docx.Document()
+    # Thêm tiêu đề
+    h = doc.add_heading(tieu_de_bao_cao, level=1)
+    h.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    
+    # Thêm nội dung (Có xử lý in đậm **text** của Markdown cơ bản)
+    for line in noi_dung_ai.split('\n'):
+        line = line.strip()
+        if line:
+            p = doc.add_paragraph()
+            # Xử lý gạch đầu dòng
+            if line.startswith('* ') or line.startswith('- '):
+                p.style = 'List Bullet'
+                line = line[2:]
+            
+            # Xử lý in đậm
+            parts = line.split('**')
+            for idx, part in enumerate(parts):
+                run = p.add_run(part)
+                if idx % 2 != 0:  # Những phần nằm giữa ** **
+                    run.bold = True
+                    
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    return buffer.getvalue()
+
 @st.cache_data(ttl=10)
 def load_and_transform_data(url):
     try:
@@ -169,18 +197,13 @@ def load_and_transform_data(url):
         df_doc['Lop'] = df_doc['Lop'].fillna("Chưa rõ Lớp").astype(str).replace('nan', 'Chưa rõ Lớp').replace('', 'Chưa rõ Lớp')
         df_doc['Ten_Hoc_Sinh'] = df_doc['Ten_Hoc_Sinh'].fillna("Chưa rõ").astype(str).replace('nan', 'Chưa rõ').replace('', 'Chưa rõ')
         
-        # ==============================================================
-        # TÍNH NĂNG MỚI: BỘ LỌC TIÊU HỦY DÒNG THỐNG KÊ RÁC Ở CUỐI FILE
-        # ==============================================================
         def is_hoc_sinh_that(row):
             ten = str(row['Ten_Hoc_Sinh']).lower().strip()
             lop = str(row['Lop']).lower().strip()
             
-            # Loại bỏ dòng hoàn toàn trống
             if (ten in ['', 'nan', 'none', 'chưa rõ']) and (lop in ['', 'nan', 'none', 'chưa rõ lớp']):
                 return False
                 
-            # Loại bỏ bất cứ dòng nào có từ khóa của dòng Thống Kê
             tu_khoa_rac = ['chỉ tiêu', 'chi tieu', 'trung bình', 'trung binh', 'tổng cộng', 'tổng điểm', 'điểm tb', 'toàn trường', 'toàn khối', 'tỉ lệ', 'tỷ lệ', 'chênh lệch']
             if any(k in ten for k in tu_khoa_rac) or any(k in lop for k in tu_khoa_rac):
                 return False
@@ -211,7 +234,6 @@ def load_and_transform_data(url):
             if col in df_clean.columns:
                 df_clean[col] = df_clean[col].apply(extract_float)
 
-        # Học sinh nào không có điểm (ô trống -> NaN) sẽ bị drop thẳng tay, không bao giờ được đưa vào tính toán
         df_clean = df_clean.dropna(subset=['Diem_Thi', 'Mon_Hoc', 'Lan_Thi'])
         
         return df_clean, danh_sach_toan_bo_lop, chi_tieu_chung_val, dict_chi_tieu_mon, None
@@ -291,7 +313,6 @@ if gsheet_url:
         # --- TAB 1 ---
         with tab1:
             st.markdown("#### 🌟 Biến động Điểm Trung bình Chung qua các Đợt thi")
-            # TÍNH CHUẨN XÁC: TB của từng học sinh trước, rồi mới lấy TB Toàn khối
             df_tb_hs = df_doc.groupby(['Lan_Thi', 'Ten_Hoc_Sinh', 'Lop'])['Diem_Thi'].mean().reset_index()
             tb_khoi_cac_lan = df_tb_hs.groupby('Lan_Thi')['Diem_Thi'].mean().reset_index()
             tb_khoi_cac_lan['Điểm TB Chung'] = tb_khoi_cac_lan['Diem_Thi'].round(2)
@@ -428,6 +449,15 @@ if gsheet_url:
                 if "ai_ket_qua_t3" in st.session_state and st.session_state.ai_ket_qua_t3 != "":
                     st.markdown("#### 💡 Giải pháp Nâng cao Chất lượng (AI Đề xuất)")
                     st.info(st.session_state.ai_ket_qua_t3)
+                    # NÚT XUẤT WORD
+                    word_data_t3 = tao_file_word(st.session_state.ai_ket_qua_t3, f"BÁO CÁO PHÂN TÍCH CHUYÊN MÔN - {chon_mon.upper()} ({chon_lan.upper()})")
+                    st.download_button(
+                        label="📄 Tải Báo cáo AI (Định dạng Word)",
+                        data=word_data_t3,
+                        file_name=f"Bao_cao_AI_{chon_mon}_{chon_lan}.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        key="btn_word_t3"
+                    )
 
         # --- TAB 4 ---
         with tab4:
@@ -539,9 +569,18 @@ if gsheet_url:
             if "ai_ket_qua_t4" in st.session_state and st.session_state.ai_ket_qua_t4 != "":
                 st.markdown("#### 💡 Cố vấn Quản trị Chất lượng (AI Đề xuất)")
                 st.info(st.session_state.ai_ket_qua_t4)
+                # NÚT XUẤT WORD
+                word_data_t4 = tao_file_word(st.session_state.ai_ket_qua_t4, "BÁO CÁO PHÂN TÍCH CHẤT LƯỢNG TOÀN TRƯỜNG")
+                st.download_button(
+                    label="📄 Tải Báo cáo AI (Định dạng Word)",
+                    data=word_data_t4,
+                    file_name="Bao_cao_AI_Toan_Truong.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key="btn_word_t4"
+                )
 
         # ---------------------------------------------------------------------
-        # TAB 5: XÉT TỐT NGHIỆP THPT & ĐẠI HỌC
+        # TAB 5: XÉT TỐT NGHIỆP THPT & ĐẠI HỌC (ĐÃ BỔ SUNG ĐẦY ĐỦ TỔ HỢP)
         # ---------------------------------------------------------------------
         with tab5:
             st.markdown("#### 🎓 HỆ THỐNG XÉT TỐT NGHIỆP VÀ ĐẠI HỌC 2026")
@@ -598,10 +637,24 @@ if gsheet_url:
                 'KTPL': get_col(mon_cols, ['ktpl', 'gdcd', 'kinh tế', 'pháp luật', 'gdk'])
             }
             
+            # --- BỔ SUNG ĐẦY ĐỦ CÁC TỔ HỢP HIỆN HÀNH THEO GDPT 2018 ---
             ds_to_hop = {
-                'A00': ['Toán', 'Lý', 'Hóa'], 'A01': ['Toán', 'Lý', 'Anh'], 'B00': ['Toán', 'Hóa', 'Sinh'], 
-                'C00': ['Văn', 'Sử', 'Địa'], 'C14': ['Toán', 'Văn', 'KTPL'], 'C19': ['Văn', 'Sử', 'KTPL'],
-                'C20': ['Văn', 'Địa', 'KTPL'], 'D01': ['Toán', 'Văn', 'Anh'], 'D07': ['Toán', 'Hóa', 'Anh']
+                'A00': ['Toán', 'Lý', 'Hóa'], 'A01': ['Toán', 'Lý', 'Anh'], 'A02': ['Toán', 'Lý', 'Sinh'],
+                'A03': ['Toán', 'Lý', 'Sử'], 'A04': ['Toán', 'Lý', 'Địa'], 'A05': ['Toán', 'Hóa', 'Sử'],
+                'A06': ['Toán', 'Hóa', 'Địa'], 'A07': ['Toán', 'Sử', 'Địa'], 'A08': ['Toán', 'Sử', 'KTPL'],
+                'A09': ['Toán', 'Địa', 'KTPL'], 'A10': ['Toán', 'Lý', 'KTPL'], 'A11': ['Toán', 'Hóa', 'KTPL'],
+                'B00': ['Toán', 'Hóa', 'Sinh'], 'B02': ['Toán', 'Sinh', 'Địa'], 'B03': ['Toán', 'Sinh', 'Sử'], 'B08': ['Toán', 'Sinh', 'Anh'],
+                'C00': ['Văn', 'Sử', 'Địa'], 'C01': ['Toán', 'Văn', 'Lý'], 'C02': ['Toán', 'Văn', 'Hóa'],
+                'C03': ['Toán', 'Văn', 'Sử'], 'C04': ['Toán', 'Văn', 'Địa'], 'C05': ['Văn', 'Lý', 'Hóa'],
+                'C06': ['Văn', 'Lý', 'Sinh'], 'C07': ['Văn', 'Lý', 'Sử'], 'C08': ['Văn', 'Hóa', 'Sinh'],
+                'C09': ['Văn', 'Lý', 'Địa'], 'C10': ['Văn', 'Hóa', 'Sử'], 'C11': ['Văn', 'Hóa', 'Địa'],
+                'C12': ['Văn', 'Sinh', 'Sử'], 'C13': ['Văn', 'Sinh', 'Địa'], 'C14': ['Toán', 'Văn', 'KTPL'],
+                'C16': ['Văn', 'Lý', 'KTPL'], 'C17': ['Văn', 'Hóa', 'KTPL'], 'C18': ['Văn', 'Sinh', 'KTPL'],
+                'C19': ['Văn', 'Sử', 'KTPL'], 'C20': ['Văn', 'Địa', 'KTPL'],
+                'D01': ['Toán', 'Văn', 'Anh'], 'D07': ['Toán', 'Hóa', 'Anh'], 'D08': ['Toán', 'Sinh', 'Anh'],
+                'D09': ['Toán', 'Sử', 'Anh'], 'D10': ['Toán', 'Địa', 'Anh'], 'D11': ['Văn', 'Lý', 'Anh'],
+                'D12': ['Văn', 'Hóa', 'Anh'], 'D13': ['Văn', 'Sinh', 'Anh'], 'D14': ['Văn', 'Sử', 'Anh'],
+                'D15': ['Văn', 'Địa', 'Anh']
             }
             
             to_hop_hien_co = []
