@@ -63,9 +63,6 @@ def load_and_transform_data(url):
         row_lan = df_raw.iloc[idx_lan].copy()
         row_mon = df_raw.iloc[idx_mon].copy()
         
-        # ==============================================================
-        # ĐỌC CHỈ TIÊU TỪ FILE EXCEL
-        # ==============================================================
         chi_tieu_chung_val = 6.0
         dict_chi_tieu_mon = {}
         
@@ -90,7 +87,6 @@ def load_and_transform_data(url):
                                 c_mon_sach = re.sub(r'[\(\)]', '', c_mon_sach).strip()
                                 dict_chi_tieu_mon[c_mon_sach] = diem_ct
                         except: pass
-        # ==============================================================
         
         active_lan = "Lần 1"
         new_cols = []
@@ -133,10 +129,6 @@ def load_and_transform_data(url):
         df_ngang = df_ngang.loc[:, mask_not_rac]
         df_ngang = df_ngang.loc[:, ~df_ngang.columns.duplicated()]
         
-        # Tiêu hủy dòng chỉ tiêu để tránh lọt vào dữ liệu
-        mask_chi_tieu = df_ngang.astype(str).apply(lambda x: x.str.lower().str.contains('chỉ tiêu|chi tieu')).any(axis=1)
-        df_ngang = df_ngang[~mask_chi_tieu].reset_index(drop=True)
-        
         cac_cot_thong_tin = [c for c in df_ngang.columns if '|' not in c]
         cac_cot_diem = [c for c in df_ngang.columns if '|' in c]
         
@@ -177,14 +169,25 @@ def load_and_transform_data(url):
         df_doc['Lop'] = df_doc['Lop'].fillna("Chưa rõ Lớp").astype(str).replace('nan', 'Chưa rõ Lớp').replace('', 'Chưa rõ Lớp')
         df_doc['Ten_Hoc_Sinh'] = df_doc['Ten_Hoc_Sinh'].fillna("Chưa rõ").astype(str).replace('nan', 'Chưa rõ').replace('', 'Chưa rõ')
         
+        # ==============================================================
+        # TÍNH NĂNG MỚI: BỘ LỌC TIÊU HỦY DÒNG THỐNG KÊ RÁC Ở CUỐI FILE
+        # ==============================================================
         def is_hoc_sinh_that(row):
             ten = str(row['Ten_Hoc_Sinh']).lower().strip()
             lop = str(row['Lop']).lower().strip()
+            
+            # Loại bỏ dòng hoàn toàn trống
             if (ten in ['', 'nan', 'none', 'chưa rõ']) and (lop in ['', 'nan', 'none', 'chưa rõ lớp']):
                 return False
-            tu_khoa = ['chỉ tiêu', 'chi tieu', 'trung bình', 'tổng cộng', 'tổng điểm']
-            if any(k in ten for k in tu_khoa):
+                
+            # Loại bỏ bất cứ dòng nào có từ khóa của dòng Thống Kê
+            tu_khoa_rac = ['chỉ tiêu', 'chi tieu', 'trung bình', 'trung binh', 'tổng cộng', 'tổng điểm', 'điểm tb', 'toàn trường', 'toàn khối', 'tỉ lệ', 'tỷ lệ', 'chênh lệch']
+            if any(k in ten for k in tu_khoa_rac) or any(k in lop for k in tu_khoa_rac):
                 return False
+                
+            if ten in ['tb', 'đtb', 'tổng', 'tb chung'] or lop in ['tb', 'đtb', 'tổng', 'tb chung']:
+                return False
+                
             return True
             
         df_doc = df_doc[df_doc.apply(is_hoc_sinh_that, axis=1)].reset_index(drop=True)
@@ -208,6 +211,7 @@ def load_and_transform_data(url):
             if col in df_clean.columns:
                 df_clean[col] = df_clean[col].apply(extract_float)
 
+        # Học sinh nào không có điểm (ô trống -> NaN) sẽ bị drop thẳng tay, không bao giờ được đưa vào tính toán
         df_clean = df_clean.dropna(subset=['Diem_Thi', 'Mon_Hoc', 'Lan_Thi'])
         
         return df_clean, danh_sach_toan_bo_lop, chi_tieu_chung_val, dict_chi_tieu_mon, None
@@ -287,7 +291,9 @@ if gsheet_url:
         # --- TAB 1 ---
         with tab1:
             st.markdown("#### 🌟 Biến động Điểm Trung bình Chung qua các Đợt thi")
-            tb_khoi_cac_lan = df_doc.groupby('Lan_Thi')['Diem_Thi'].mean().reset_index()
+            # TÍNH CHUẨN XÁC: TB của từng học sinh trước, rồi mới lấy TB Toàn khối
+            df_tb_hs = df_doc.groupby(['Lan_Thi', 'Ten_Hoc_Sinh', 'Lop'])['Diem_Thi'].mean().reset_index()
+            tb_khoi_cac_lan = df_tb_hs.groupby('Lan_Thi')['Diem_Thi'].mean().reset_index()
             tb_khoi_cac_lan['Điểm TB Chung'] = tb_khoi_cac_lan['Diem_Thi'].round(2)
             tb_khoi_cac_lan['Chỉ tiêu Giao'] = chi_tieu_chung
             tb_khoi_cac_lan['Chênh lệch'] = (tb_khoi_cac_lan['Điểm TB Chung'] - chi_tieu_chung).round(2)
@@ -381,8 +387,6 @@ if gsheet_url:
                 tb_khoi = df_hien_tai['Diem_Thi'].mean()
                 d_toan_khoi = {'Xếp hạng': '-', 'Lớp': '⭐ TOÀN KHỐI', 'Sĩ số': len(df_hien_tai), 'Điểm TB': round(tb_khoi, 2), 'Chênh lệch CT': round(tb_khoi - ct_mon_tab3, 2)}
                 for col in labels: d_toan_khoi[col] = dong_toan_khoi_pd[col].values[0]
-                
-                # SỬA LỖI Ở ĐÂY: GHI THÊM DÒNG MỚI (APPEND) THAY VÌ GHI ĐÈ (-1)
                 df_tong_hop.loc[len(df_tong_hop)] = d_toan_khoi 
 
                 st.dataframe(df_tong_hop, use_container_width=True, hide_index=True)
@@ -435,14 +439,22 @@ if gsheet_url:
             
             df_2lan = df_doc[df_doc['Lan_Thi'].isin([lan_truoc, lan_sau])]
             
+            # TÍNH CHUẨN XÁC: TB Học sinh trước, rồi mới lấy TB Lớp
+            df_hs_tab4 = df_2lan.groupby(['Lan_Thi', 'Ten_Hoc_Sinh', 'Lop'])['Diem_Thi'].mean().reset_index()
+            
             danh_sach_lop = list(list_all_classes)
             danh_sach_lop.append("⭐ TOÀN KHỐI")
             
             du_lieu_bang = []
             for lop in danh_sach_lop:
-                df_lop = df_2lan if lop == "⭐ TOÀN KHỐI" else df_2lan[df_2lan['Lop'] == lop]
-                tb_truoc = df_lop[df_lop['Lan_Thi'] == lan_truoc]['Diem_Thi'].mean()
-                tb_sau = df_lop[df_lop['Lan_Thi'] == lan_sau]['Diem_Thi'].mean()
+                if lop == "⭐ TOÀN KHỐI":
+                    tb_truoc = df_hs_tab4[df_hs_tab4['Lan_Thi'] == lan_truoc]['Diem_Thi'].mean()
+                    tb_sau = df_hs_tab4[df_hs_tab4['Lan_Thi'] == lan_sau]['Diem_Thi'].mean()
+                    df_lop = df_2lan
+                else:
+                    tb_truoc = df_hs_tab4[(df_hs_tab4['Lan_Thi'] == lan_truoc) & (df_hs_tab4['Lop'] == lop)]['Diem_Thi'].mean()
+                    tb_sau = df_hs_tab4[(df_hs_tab4['Lan_Thi'] == lan_sau) & (df_hs_tab4['Lop'] == lop)]['Diem_Thi'].mean()
+                    df_lop = df_2lan[df_2lan['Lop'] == lop]
                 
                 row = {
                     'Lớp': lop, 
@@ -529,7 +541,7 @@ if gsheet_url:
                 st.info(st.session_state.ai_ket_qua_t4)
 
         # ---------------------------------------------------------------------
-        # TAB 5: XÉT TỐT NGHIỆP THPT (FIX LỖI GHI ĐÈ ĐIỂM) & ĐẠI HỌC
+        # TAB 5: XÉT TỐT NGHIỆP THPT & ĐẠI HỌC
         # ---------------------------------------------------------------------
         with tab5:
             st.markdown("#### 🎓 HỆ THỐNG XÉT TỐT NGHIỆP VÀ ĐẠI HỌC 2026")
