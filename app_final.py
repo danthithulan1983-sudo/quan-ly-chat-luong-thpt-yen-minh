@@ -239,18 +239,13 @@ def load_and_transform_data(url):
         df_doc['Lop'] = df_doc['Lop'].fillna("Chưa rõ Lớp").astype(str).replace('nan', 'Chưa rõ Lớp').replace('', 'Chưa rõ Lớp')
         df_doc['Ten_Hoc_Sinh'] = df_doc['Ten_Hoc_Sinh'].fillna("Chưa rõ").astype(str).replace('nan', 'Chưa rõ').replace('', 'Chưa rõ')
         
-        # ==============================================================
-        # BỘ LỌC ĐÃ ĐƯỢC NÂNG CẤP ĐỂ LOẠI BỎ TRIỆT ĐỂ DÒNG CHỈ TIÊU/THỐNG KÊ
-        # ==============================================================
         def is_hoc_sinh_that(row):
             ten = str(row['Ten_Hoc_Sinh']).lower().strip()
             lop = str(row['Lop']).lower().strip()
             
-            # 1. Bắt buộc phải có tên. Tên trống 100% là dòng rác ở cuối danh sách!
             if ten in ['', 'nan', 'none', 'chưa rõ', 'stt', 'tt', '0']:
                 return False
                 
-            # 2. Bộ từ khóa ngăn chặn dòng thống kê lạc vào cột Tên/Lớp
             tu_khoa_rac = ['chỉ tiêu', 'chi tieu', 'trung bình', 'trung binh', 'tổng cộng', 'tổng số', 'điểm tb', 'toàn trường', 'toàn khối', 'tỉ lệ', 'tỷ lệ', 'chênh lệch', 'kém', 'yếu', 'khá', 'giỏi', 'điểm liệt']
             
             for k in tu_khoa_rac:
@@ -520,6 +515,7 @@ if gsheet_url:
             
             df_2lan = df_doc[df_doc['Lan_Thi'].isin([lan_truoc, lan_sau])]
             
+            # TÍNH CHUẨN XÁC: TB Học sinh trước, rồi mới lấy TB Lớp
             df_hs_tab4 = df_2lan.groupby(['Lan_Thi', 'Ten_Hoc_Sinh', 'Lop'])['Diem_Thi'].mean().reset_index()
             
             danh_sach_lop = list(list_all_classes)
@@ -662,11 +658,21 @@ if gsheet_url:
             df_wide = df_dot.pivot_table(index=index_cols, columns='Mon_Hoc', values='Diem_Thi').reset_index()
             mon_cols = [c for c in df_wide.columns if c not in index_cols]
 
+            # ---------------------------------------------------------
+            # CẬP NHẬT GIAO DIỆN HIỂN THỊ ĐTB 4 MÔN VÀ ĐTB HỌC BẠ 3 NĂM
+            # ---------------------------------------------------------
+            
+            # 1. Tính ĐTB Học bạ 3 năm
             dtb_cac_nam = (df_wide['TB_10_Thuc'] * 1 + df_wide['TB_11_Thuc'] * 2 + df_wide['TB_12_Thuc'] * 3) / 6
-            df_wide['Tổng 4 Môn'] = df_wide[mon_cols].sum(axis=1)
+            df_wide['ĐTB Học bạ 3 năm'] = dtb_cac_nam.round(2)
+            
+            # 2. Tính ĐTB 4 môn thi
+            tong_4_mon = df_wide[mon_cols].sum(axis=1)
+            df_wide['ĐTB 4 Môn Thi'] = (tong_4_mon / 4).round(2)
             df_wide['Điểm Liệt'] = df_wide[mon_cols].min(axis=1)
             
-            df_wide['Điểm Xét TN'] = ((((df_wide['Tổng 4 Môn'] + df_wide['KK_Thuc']) / 4) + dtb_cac_nam) / 2 + df_wide['UT_Thuc']).round(2)
+            # 3. Tính điểm xét Tốt nghiệp
+            df_wide['Điểm Xét TN'] = ((((tong_4_mon + df_wide['KK_Thuc']) / 4) + dtb_cac_nam) / 2 + df_wide['UT_Thuc']).round(2)
             
             df_wide['Kết quả TN'] = df_wide.apply(lambda row: "ĐỖ ✅" if row['Điểm Xét TN'] >= 5.0 and row['Điểm Liệt'] > 1.0 else "TRƯỢT ❌", axis=1)
             
@@ -730,7 +736,8 @@ if gsheet_url:
             if 'Diem_UT' in cac_cot_thong_tin_co: hien_thi_cols.append('UT')
             if 'Diem_KK' in cac_cot_thong_tin_co: hien_thi_cols.append('KK')
 
-            cols_to_show = ['Ten_Hoc_Sinh', 'Lop'] + hien_thi_cols + mon_cols + ['Tổng 4 Môn', 'Điểm Xét TN', 'Kết quả TN'] + chon_to_hop
+            # Cập nhật danh sách hiển thị với 2 cột mới
+            cols_to_show = ['Ten_Hoc_Sinh', 'Lop'] + hien_thi_cols + mon_cols + ['ĐTB 4 Môn Thi', 'ĐTB Học bạ 3 năm', 'Điểm Xét TN', 'Kết quả TN'] + chon_to_hop
             df_wide_show = df_wide[cols_to_show]
             
             def hide_zero_t5(val):
