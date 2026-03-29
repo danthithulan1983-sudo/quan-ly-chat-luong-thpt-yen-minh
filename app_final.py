@@ -489,10 +489,11 @@ if gsheet_url:
                         else: st.warning("🔒 Cần quyền Quản trị để dùng AI!")
                         
                 if "ai_ket_qua_t3" in st.session_state and st.session_state.ai_ket_qua_t3 != "":
-                    st.markdown("#### 💡 Giải pháp Nâng cao Chất lượng (AI Đề xuất)")
-                    st.info(st.session_state.ai_ket_qua_t3)
-                    # XUẤT WORD CHUẨN NGHỊ ĐỊNH 30
-                    word_data_t3 = tao_file_word_chuan_nd30(st.session_state.ai_ket_qua_t3, f"BÁO CÁO PHÂN TÍCH CHUYÊN MÔN - {chon_mon.upper()} ({chon_lan.upper()})")
+                    st.markdown("#### 💡 Bản Thảo Báo Cáo AI (BẠN CÓ THỂ CHỈNH SỬA)")
+                    # SỬ DỤNG TEXT_AREA THAY VÌ INFO ĐỂ CHỈNH SỬA
+                    edited_t3 = st.text_area("✍️ Tinh chỉnh nội dung trước khi xuất Word:", value=st.session_state.ai_ket_qua_t3, height=350, key="edit_t3")
+                    
+                    word_data_t3 = tao_file_word_chuan_nd30(edited_t3, f"BÁO CÁO PHÂN TÍCH CHUYÊN MÔN - {chon_mon.upper()} ({chon_lan.upper()})")
                     st.download_button(
                         label="📄 Tải Báo cáo chuẩn Nghị định 30",
                         data=word_data_t3,
@@ -596,8 +597,9 @@ if gsheet_url:
                                 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
                                 cac_model = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
                                 model = genai.GenerativeModel(next((m for m in cac_model if 'flash' in m), cac_model[0]))
+                                # ĐÃ SỬA CHỨC DANH TRONG PROMPT THÀNH PHÓ HIỆU TRƯỞNG ĐỂ ĐỒNG NHẤT
                                 prompt = f"""
-                                Đóng vai trò là Hiệu trưởng phụ trách chuyên môn. Hãy phân tích bảng dữ liệu tổng hợp sự tiến bộ của toàn trường:
+                                Đóng vai trò là Phó Hiệu trưởng phụ trách chuyên môn. Hãy phân tích bảng dữ liệu tổng hợp sự tiến bộ của toàn trường:
                                 {df_tong_hop_all.to_string(index=False)}
                                 1. Nhận xét tổng quan.
                                 2. Vinh danh lớp tiến bộ (+/- tăng cao).
@@ -609,10 +611,11 @@ if gsheet_url:
                     else: st.warning("🔒 Cần quyền Quản trị để dùng AI!")
                         
             if "ai_ket_qua_t4" in st.session_state and st.session_state.ai_ket_qua_t4 != "":
-                st.markdown("#### 💡 Cố vấn Quản trị Chất lượng (AI Đề xuất)")
-                st.info(st.session_state.ai_ket_qua_t4)
-                # XUẤT WORD CHUẨN NGHỊ ĐỊNH 30
-                word_data_t4 = tao_file_word_chuan_nd30(st.session_state.ai_ket_qua_t4, "BÁO CÁO PHÂN TÍCH CHẤT LƯỢNG TOÀN TRƯỜNG")
+                st.markdown("#### 💡 Bản Thảo Báo Cáo AI (BẠN CÓ THỂ CHỈNH SỬA)")
+                # SỬ DỤNG TEXT_AREA CHO PHÉP SỬA TRƯỚC KHI TRÌNH KÝ
+                edited_t4 = st.text_area("✍️ Tinh chỉnh nội dung trước khi xuất trình ký:", value=st.session_state.ai_ket_qua_t4, height=400, key="edit_t4")
+                
+                word_data_t4 = tao_file_word_chuan_nd30(edited_t4, "BÁO CÁO PHÂN TÍCH CHẤT LƯỢNG TOÀN TRƯỜNG")
                 st.download_button(
                     label="📄 Tải Báo cáo chuẩn Nghị định 30",
                     data=word_data_t4,
@@ -660,7 +663,7 @@ if gsheet_url:
             
             df_wide['Điểm Xét TN'] = ((((df_wide['Tổng 4 Môn'] + df_wide['KK_Thuc']) / 4) + dtb_cac_nam) / 2 + df_wide['UT_Thuc']).round(2)
             
-            # --- CẬP NHẬT LUẬT ĐIỂM LIỆT LÀ <= 1.0 THEO QUY CHẾ HIỆN HÀNH ---
+            # CẬP NHẬT LUẬT ĐIỂM LIỆT LÀ <= 1.0 THEO QUY CHẾ HIỆN HÀNH
             df_wide['Kết quả TN'] = df_wide.apply(lambda row: "ĐỖ ✅" if row['Điểm Xét TN'] >= 5.0 and row['Điểm Liệt'] > 1.0 else "TRƯỢT ❌", axis=1)
             
             def get_col(danh_sach_cot, keywords):
@@ -681,7 +684,6 @@ if gsheet_url:
                 'KTPL': get_col(mon_cols, ['ktpl', 'gdcd', 'kinh tế', 'pháp luật', 'gdk'])
             }
             
-            # --- CẬP NHẬT ĐẦY ĐỦ MA TRẬN TỔ HỢP XÉT TUYỂN ĐẠI HỌC 2025-2026 ---
             ds_to_hop = {
                 'A00': ['Toán', 'Lý', 'Hóa'], 'A01': ['Toán', 'Lý', 'Anh'], 'A02': ['Toán', 'Lý', 'Sinh'],
                 'A03': ['Toán', 'Lý', 'Sử'], 'A04': ['Toán', 'Lý', 'Địa'], 'A05': ['Toán', 'Hóa', 'Sử'],
@@ -751,7 +753,7 @@ if gsheet_url:
                     else: st.warning("🔒 Vui lòng đăng nhập quyền Quản trị!")
 
             # ==============================================================
-            # TÍNH NĂNG MỚI: AI TƯ VẤN HƯỚNG NGHIỆP TỪNG HỌC SINH (NÂNG CẤP PROMPT)
+            # TÍNH NĂNG MỚI: AI TƯ VẤN HƯỚNG NGHIỆP TỪNG HỌC SINH (NÂNG CẤP PROMPT & CHỈNH SỬA)
             # ==============================================================
             st.markdown("---")
             st.markdown("#### 🧭 AI TƯ VẤN HƯỚNG NGHIỆP CHUYÊN SÂU TỪNG HỌC SINH")
@@ -768,7 +770,6 @@ if gsheet_url:
                             cac_model = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
                             model = genai.GenerativeModel(next((m for m in cac_model if 'flash' in m), cac_model[0]))
 
-                            # Lấy data của học sinh được chọn
                             data_hs = df_wide_show[df_wide_show['Ten_Hoc_Sinh'] == chon_hs_tu_van].iloc[0]
                             str_data = data_hs.to_string()
 
@@ -792,11 +793,13 @@ if gsheet_url:
                 else: st.warning("🔒 Cần quyền Quản trị để dùng AI!")
 
             if "ai_ket_qua_t5" in st.session_state and st.session_state.ai_ket_qua_t5 != "":
-                st.markdown(f"#### 💡 Bản Tư Vấn: {chon_hs_tu_van}")
-                st.success(st.session_state.ai_ket_qua_t5)
+                st.markdown(f"#### 💡 Bản Tư Vấn: {chon_hs_tu_van} (BẠN CÓ THỂ CHỈNH SỬA)")
+                
+                # SỬ DỤNG TEXT_AREA CHO PHÉP GIÁO VIÊN TÌNH CHỈNH LỜI NHẬN XÉT CỦA AI TRƯỚC KHI IN
+                edited_t5 = st.text_area("✍️ Cá nhân hóa và tinh chỉnh lại lời tư vấn gửi Phụ huynh/Học sinh:", value=st.session_state.ai_ket_qua_t5, height=450, key="edit_t5")
 
                 word_data_t5 = tao_file_word_chuan_nd30(
-                    st.session_state.ai_ket_qua_t5,
+                    edited_t5,
                     f"BẢN TƯ VẤN HƯỚNG NGHIỆP VÀ XÉT TUYỂN ĐẠI HỌC\nHọc sinh: {chon_hs_tu_van}"
                 )
                 st.download_button(
