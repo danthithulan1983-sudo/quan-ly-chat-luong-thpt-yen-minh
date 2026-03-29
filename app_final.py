@@ -34,8 +34,16 @@ with col_giua:
 st.markdown("<hr style='border: 0; height: 1px; background-image: linear-gradient(to right, rgba(0,0,0,0), rgba(0,0,0,0.1), rgba(0,0,0,0)); margin-bottom: 30px;'>", unsafe_allow_html=True)
 
 # ==========================================
-# 1. HÀM TẠO FILE WORD CHUẨN NGHỊ ĐỊNH 30/2020/NĐ-CP
+# 1. CÁC HÀM CÔNG CỤ (LÀM TRÒN ĐIỂM & TẠO WORD)
 # ==========================================
+def lam_tron_diem(val):
+    """Hàm làm tròn điểm số học thuật (Round Half Up) chuẩn Bộ GDĐT"""
+    if isinstance(val, pd.Series):
+        return np.floor(val * 100 + 0.5) / 100
+    else:
+        if pd.isna(val): return None
+        return np.floor(val * 100 + 0.5) / 100
+
 def tao_file_word_chuan_nd30(noi_dung_ai, tieu_de_bao_cao):
     doc = docx.Document()
     
@@ -361,9 +369,9 @@ if gsheet_url:
             st.markdown("#### 🌟 Biến động Điểm Trung bình Chung qua các Đợt thi")
             df_tb_hs = df_doc.groupby(['Lan_Thi', 'Ten_Hoc_Sinh', 'Lop'])['Diem_Thi'].mean().reset_index()
             tb_khoi_cac_lan = df_tb_hs.groupby('Lan_Thi')['Diem_Thi'].mean().reset_index()
-            tb_khoi_cac_lan['Điểm TB Chung'] = tb_khoi_cac_lan['Diem_Thi'].round(2)
+            tb_khoi_cac_lan['Điểm TB Chung'] = lam_tron_diem(tb_khoi_cac_lan['Diem_Thi'])
             tb_khoi_cac_lan['Chỉ tiêu Giao'] = chi_tieu_chung
-            tb_khoi_cac_lan['Chênh lệch'] = (tb_khoi_cac_lan['Điểm TB Chung'] - chi_tieu_chung).round(2)
+            tb_khoi_cac_lan['Chênh lệch'] = lam_tron_diem(tb_khoi_cac_lan['Điểm TB Chung'] - chi_tieu_chung)
             
             fig_chung = go.Figure()
             fig_chung.add_trace(go.Scatter(x=tb_khoi_cac_lan['Lan_Thi'], y=tb_khoi_cac_lan['Điểm TB Chung'], mode='lines+markers+text', name='Thực tế', text=tb_khoi_cac_lan['Điểm TB Chung'], textposition='top center', line=dict(color='blue', width=3), marker=dict(size=10)))
@@ -388,7 +396,7 @@ if gsheet_url:
             
             df_mon_tien_trinh = df_doc[df_doc['Mon_Hoc'] == chon_mon_tab2]
             tb_mon_cac_lan = df_mon_tien_trinh.groupby('Lan_Thi')['Diem_Thi'].mean().reset_index()
-            tb_mon_cac_lan['Điểm TB Môn'] = tb_mon_cac_lan['Diem_Thi'].round(2)
+            tb_mon_cac_lan['Điểm TB Môn'] = lam_tron_diem(tb_mon_cac_lan['Diem_Thi'])
             
             c_bieudo, c_bang = st.columns([2, 1])
             with c_bieudo:
@@ -399,7 +407,7 @@ if gsheet_url:
             with c_bang:
                 st.markdown("<br><br>", unsafe_allow_html=True)
                 tb_mon_cac_lan['Chỉ tiêu Môn'] = ct_mon_hien_tai
-                tb_mon_cac_lan['Chênh lệch'] = (tb_mon_cac_lan['Điểm TB Môn'] - ct_mon_hien_tai).round(2)
+                tb_mon_cac_lan['Chênh lệch'] = lam_tron_diem(tb_mon_cac_lan['Điểm TB Môn'] - ct_mon_hien_tai)
                 df_t2 = tb_mon_cac_lan[['Lan_Thi', 'Điểm TB Môn', 'Chênh lệch']]
                 st.dataframe(df_t2, hide_index=True)
                 
@@ -436,8 +444,8 @@ if gsheet_url:
                     dtb = lop_data['Diem_Thi'].mean()
                     bao_cao_list.append({
                         'Lớp': lop, 'Sĩ số': si_so, 
-                        'Điểm TB': round(dtb, 2) if pd.notna(dtb) else None, 
-                        'Chênh lệch CT': round(dtb - ct_mon_tab3, 2) if pd.notna(dtb) else None
+                        'Điểm TB': lam_tron_diem(dtb) if pd.notna(dtb) else None, 
+                        'Chênh lệch CT': lam_tron_diem(dtb - ct_mon_tab3) if pd.notna(dtb) else None
                     })
                 
                 df_bao_cao = pd.DataFrame(bao_cao_list).sort_values(by='Điểm TB', ascending=False, na_position='last').reset_index(drop=True)
@@ -452,7 +460,7 @@ if gsheet_url:
                     df_tong_hop[c] = df_tong_hop[c].apply(clean_zero)
                 
                 tb_khoi = df_hien_tai['Diem_Thi'].mean()
-                d_toan_khoi = {'Xếp hạng': '-', 'Lớp': '⭐ TOÀN KHỐI', 'Sĩ số': len(df_hien_tai), 'Điểm TB': round(tb_khoi, 2), 'Chênh lệch CT': round(tb_khoi - ct_mon_tab3, 2)}
+                d_toan_khoi = {'Xếp hạng': '-', 'Lớp': '⭐ TOÀN KHỐI', 'Sĩ số': len(df_hien_tai), 'Điểm TB': lam_tron_diem(tb_khoi), 'Chênh lệch CT': lam_tron_diem(tb_khoi - ct_mon_tab3)}
                 for col in labels: d_toan_khoi[col] = dong_toan_khoi_pd[col].values[0]
                 df_tong_hop.loc[len(df_tong_hop)] = d_toan_khoi 
 
@@ -515,7 +523,6 @@ if gsheet_url:
             
             df_2lan = df_doc[df_doc['Lan_Thi'].isin([lan_truoc, lan_sau])]
             
-            # TÍNH CHUẨN XÁC: TB Học sinh trước, rồi mới lấy TB Lớp
             df_hs_tab4 = df_2lan.groupby(['Lan_Thi', 'Ten_Hoc_Sinh', 'Lop'])['Diem_Thi'].mean().reset_index()
             
             danh_sach_lop = list(list_all_classes)
@@ -534,10 +541,10 @@ if gsheet_url:
                 
                 row = {
                     'Lớp': lop, 
-                    f'TB Chung ({lan_truoc})': round(tb_truoc, 2) if pd.notna(tb_truoc) else None,
-                    f'TB Chung ({lan_sau})': round(tb_sau, 2) if pd.notna(tb_sau) else None,
-                    '+/- 2 Lần': round(tb_sau - tb_truoc, 2) if pd.notna(tb_sau) and pd.notna(tb_truoc) else None,
-                    '+/- Chỉ tiêu': round(tb_sau - chi_tieu_chung, 2) if pd.notna(tb_sau) else None
+                    f'TB Chung ({lan_truoc})': lam_tron_diem(tb_truoc) if pd.notna(tb_truoc) else None,
+                    f'TB Chung ({lan_sau})': lam_tron_diem(tb_sau) if pd.notna(tb_sau) else None,
+                    '+/- 2 Lần': lam_tron_diem(tb_sau - tb_truoc) if pd.notna(tb_sau) and pd.notna(tb_truoc) else None,
+                    '+/- Chỉ tiêu': lam_tron_diem(tb_sau - chi_tieu_chung) if pd.notna(tb_sau) else None
                 }
                 
                 for mon in ds_mon:
@@ -545,9 +552,9 @@ if gsheet_url:
                     m_truoc = df_mon[df_mon['Lan_Thi'] == lan_truoc]['Diem_Thi'].mean()
                     m_sau = df_mon[df_mon['Lan_Thi'] == lan_sau]['Diem_Thi'].mean()
                     
-                    row[f'{mon} ({lan_truoc})'] = round(m_truoc, 2) if pd.notna(m_truoc) else None
-                    row[f'{mon} ({lan_sau})'] = round(m_sau, 2) if pd.notna(m_sau) else None
-                    row[f'+/- {mon}'] = round(m_sau - m_truoc, 2) if pd.notna(m_sau) and pd.notna(m_truoc) else None
+                    row[f'{mon} ({lan_truoc})'] = lam_tron_diem(m_truoc) if pd.notna(m_truoc) else None
+                    row[f'{mon} ({lan_sau})'] = lam_tron_diem(m_sau) if pd.notna(m_sau) else None
+                    row[f'+/- {mon}'] = lam_tron_diem(m_sau - m_truoc) if pd.notna(m_sau) and pd.notna(m_truoc) else None
                 du_lieu_bang.append(row)
                 
             df_tong_hop_all = pd.DataFrame(du_lieu_bang)
@@ -626,7 +633,7 @@ if gsheet_url:
                 )
 
         # ---------------------------------------------------------------------
-        # TAB 5: XÉT TỐT NGHIỆP THPT & ĐẠI HỌC
+        # TAB 5: XÉT TỐT NGHIỆP THPT & ĐẠI HỌC (ĐÃ ÁP DỤNG LÀM TRÒN CHUẨN)
         # ---------------------------------------------------------------------
         with tab5:
             st.markdown("#### 🎓 HỆ THỐNG XÉT TỐT NGHIỆP VÀ ĐẠI HỌC 2026")
@@ -658,21 +665,16 @@ if gsheet_url:
             df_wide = df_dot.pivot_table(index=index_cols, columns='Mon_Hoc', values='Diem_Thi').reset_index()
             mon_cols = [c for c in df_wide.columns if c not in index_cols]
 
-            # ---------------------------------------------------------
-            # CẬP NHẬT GIAO DIỆN HIỂN THỊ ĐTB 4 MÔN VÀ ĐTB HỌC BẠ 3 NĂM
-            # ---------------------------------------------------------
+            # SỬ DỤNG HÀM LÀM TRÒN CHUẨN (ROUND HALF UP)
+            dtb_cac_nam = lam_tron_diem((df_wide['TB_10_Thuc'] * 1 + df_wide['TB_11_Thuc'] * 2 + df_wide['TB_12_Thuc'] * 3) / 6)
+            df_wide['ĐTB Học bạ 3 năm'] = dtb_cac_nam
             
-            # 1. Tính ĐTB Học bạ 3 năm
-            dtb_cac_nam = (df_wide['TB_10_Thuc'] * 1 + df_wide['TB_11_Thuc'] * 2 + df_wide['TB_12_Thuc'] * 3) / 6
-            df_wide['ĐTB Học bạ 3 năm'] = dtb_cac_nam.round(2)
-            
-            # 2. Tính ĐTB 4 môn thi
             tong_4_mon = df_wide[mon_cols].sum(axis=1)
-            df_wide['ĐTB 4 Môn Thi'] = (tong_4_mon / 4).round(2)
+            df_wide['ĐTB 4 Môn Thi'] = lam_tron_diem(tong_4_mon / 4)
             df_wide['Điểm Liệt'] = df_wide[mon_cols].min(axis=1)
             
-            # 3. Tính điểm xét Tốt nghiệp
-            df_wide['Điểm Xét TN'] = ((((tong_4_mon + df_wide['KK_Thuc']) / 4) + dtb_cac_nam) / 2 + df_wide['UT_Thuc']).round(2)
+            diem_xet_tn = (((tong_4_mon + df_wide['KK_Thuc']) / 4) + dtb_cac_nam) / 2 + df_wide['UT_Thuc']
+            df_wide['Điểm Xét TN'] = lam_tron_diem(diem_xet_tn)
             
             df_wide['Kết quả TN'] = df_wide.apply(lambda row: "ĐỖ ✅" if row['Điểm Xét TN'] >= 5.0 and row['Điểm Liệt'] > 1.0 else "TRƯỢT ❌", axis=1)
             
@@ -713,12 +715,16 @@ if gsheet_url:
                 'D15': ['Văn', 'Địa', 'Anh']
             }
             
+            def calculate_score(row, subjects):
+                try: return lam_tron_diem(sum(row[s] for s in subjects))
+                except: return None
+                
             to_hop_hien_co = []
             for ten_khoi, ds_mon_thanh_phan in ds_to_hop.items():
                 cot_thuc_te = [mon_map[m] for m in ds_mon_thanh_phan if mon_map[m] is not None]
                 if len(cot_thuc_te) == 3:
                     ten_cot_moi = f"{ten_khoi} ({'-'.join(ds_mon_thanh_phan)})"
-                    df_wide[ten_cot_moi] = df_wide[cot_thuc_te].sum(axis=1, skipna=False).round(2)
+                    df_wide[ten_cot_moi] = df_wide.apply(lambda r: calculate_score(r, cot_thuc_te), axis=1)
                     to_hop_hien_co.append(ten_cot_moi)
             
             khoi_truyen_thong = [k for k in to_hop_hien_co if any(x in k for x in ["A00", "A01", "B00", "C00", "D01"])]
@@ -736,7 +742,6 @@ if gsheet_url:
             if 'Diem_UT' in cac_cot_thong_tin_co: hien_thi_cols.append('UT')
             if 'Diem_KK' in cac_cot_thong_tin_co: hien_thi_cols.append('KK')
 
-            # Cập nhật danh sách hiển thị với 2 cột mới
             cols_to_show = ['Ten_Hoc_Sinh', 'Lop'] + hien_thi_cols + mon_cols + ['ĐTB 4 Môn Thi', 'ĐTB Học bạ 3 năm', 'Điểm Xét TN', 'Kết quả TN'] + chon_to_hop
             df_wide_show = df_wide[cols_to_show]
             
