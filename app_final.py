@@ -622,7 +622,7 @@ if gsheet_url:
                 )
 
         # ---------------------------------------------------------------------
-        # TAB 5: XÉT TỐT NGHIỆP THPT & ĐẠI HỌC (TÍCH HỢP AI HƯỚNG NGHIỆP)
+        # TAB 5: XÉT TỐT NGHIỆP THPT & ĐẠI HỌC (ĐÃ SỬA LUẬT ĐIỂM LIỆT + THÊM CÁC TỔ HỢP)
         # ---------------------------------------------------------------------
         with tab5:
             st.markdown("#### 🎓 HỆ THỐNG XÉT TỐT NGHIỆP VÀ ĐẠI HỌC 2026")
@@ -659,6 +659,8 @@ if gsheet_url:
             df_wide['Điểm Liệt'] = df_wide[mon_cols].min(axis=1)
             
             df_wide['Điểm Xét TN'] = ((((df_wide['Tổng 4 Môn'] + df_wide['KK_Thuc']) / 4) + dtb_cac_nam) / 2 + df_wide['UT_Thuc']).round(2)
+            
+            # --- CẬP NHẬT LUẬT ĐIỂM LIỆT LÀ <= 1.0 THEO QUY CHẾ HIỆN HÀNH ---
             df_wide['Kết quả TN'] = df_wide.apply(lambda row: "ĐỖ ✅" if row['Điểm Xét TN'] >= 5.0 and row['Điểm Liệt'] > 1.0 else "TRƯỢT ❌", axis=1)
             
             def get_col(danh_sach_cot, keywords):
@@ -679,11 +681,24 @@ if gsheet_url:
                 'KTPL': get_col(mon_cols, ['ktpl', 'gdcd', 'kinh tế', 'pháp luật', 'gdk'])
             }
             
-            # Khởi tạo các tổ hợp xét tuyển phổ biến
+            # --- CẬP NHẬT ĐẦY ĐỦ MA TRẬN TỔ HỢP XÉT TUYỂN ĐẠI HỌC 2025-2026 ---
             ds_to_hop = {
-                'A00': ['Toán', 'Lý', 'Hóa'], 'A01': ['Toán', 'Lý', 'Anh'], 'B00': ['Toán', 'Hóa', 'Sinh'], 
-                'C00': ['Văn', 'Sử', 'Địa'], 'C14': ['Toán', 'Văn', 'KTPL'], 'C19': ['Văn', 'Sử', 'KTPL'],
-                'C20': ['Văn', 'Địa', 'KTPL'], 'D01': ['Toán', 'Văn', 'Anh'], 'D07': ['Toán', 'Hóa', 'Anh']
+                'A00': ['Toán', 'Lý', 'Hóa'], 'A01': ['Toán', 'Lý', 'Anh'], 'A02': ['Toán', 'Lý', 'Sinh'],
+                'A03': ['Toán', 'Lý', 'Sử'], 'A04': ['Toán', 'Lý', 'Địa'], 'A05': ['Toán', 'Hóa', 'Sử'],
+                'A06': ['Toán', 'Hóa', 'Địa'], 'A07': ['Toán', 'Sử', 'Địa'], 'A08': ['Toán', 'Sử', 'KTPL'],
+                'A09': ['Toán', 'Địa', 'KTPL'], 'A10': ['Toán', 'Lý', 'KTPL'], 'A11': ['Toán', 'Hóa', 'KTPL'],
+                'B00': ['Toán', 'Hóa', 'Sinh'], 'B02': ['Toán', 'Sinh', 'Địa'], 'B03': ['Toán', 'Sinh', 'Sử'], 'B08': ['Toán', 'Sinh', 'Anh'],
+                'C00': ['Văn', 'Sử', 'Địa'], 'C01': ['Toán', 'Văn', 'Lý'], 'C02': ['Toán', 'Văn', 'Hóa'],
+                'C03': ['Toán', 'Văn', 'Sử'], 'C04': ['Toán', 'Văn', 'Địa'], 'C05': ['Văn', 'Lý', 'Hóa'],
+                'C06': ['Văn', 'Lý', 'Sinh'], 'C07': ['Văn', 'Lý', 'Sử'], 'C08': ['Văn', 'Hóa', 'Sinh'],
+                'C09': ['Văn', 'Lý', 'Địa'], 'C10': ['Văn', 'Hóa', 'Sử'], 'C11': ['Văn', 'Hóa', 'Địa'],
+                'C12': ['Văn', 'Sinh', 'Sử'], 'C13': ['Văn', 'Sinh', 'Địa'], 'C14': ['Toán', 'Văn', 'KTPL'],
+                'C16': ['Văn', 'Lý', 'KTPL'], 'C17': ['Văn', 'Hóa', 'KTPL'], 'C18': ['Văn', 'Sinh', 'KTPL'],
+                'C19': ['Văn', 'Sử', 'KTPL'], 'C20': ['Văn', 'Địa', 'KTPL'],
+                'D01': ['Toán', 'Văn', 'Anh'], 'D07': ['Toán', 'Hóa', 'Anh'], 'D08': ['Toán', 'Sinh', 'Anh'],
+                'D09': ['Toán', 'Sử', 'Anh'], 'D10': ['Toán', 'Địa', 'Anh'], 'D11': ['Văn', 'Lý', 'Anh'],
+                'D12': ['Văn', 'Hóa', 'Anh'], 'D13': ['Văn', 'Sinh', 'Anh'], 'D14': ['Văn', 'Sử', 'Anh'],
+                'D15': ['Văn', 'Địa', 'Anh']
             }
             
             to_hop_hien_co = []
@@ -736,7 +751,7 @@ if gsheet_url:
                     else: st.warning("🔒 Vui lòng đăng nhập quyền Quản trị!")
 
             # ==============================================================
-            # TÍNH NĂNG MỚI: AI TƯ VẤN HƯỚNG NGHIỆP TỪNG HỌC SINH
+            # TÍNH NĂNG MỚI: AI TƯ VẤN HƯỚNG NGHIỆP TỪNG HỌC SINH (NÂNG CẤP PROMPT)
             # ==============================================================
             st.markdown("---")
             st.markdown("#### 🧭 AI TƯ VẤN HƯỚNG NGHIỆP CHUYÊN SÂU TỪNG HỌC SINH")
@@ -762,11 +777,15 @@ if gsheet_url:
                             Hãy phân tích bảng điểm thi của học sinh {chon_hs_tu_van}:
                             {str_data}
 
+                            LƯU Ý QUAN TRỌNG VỀ QUY CHẾ XÉT TUYỂN:
+                            - Mức điểm liệt hiện hành là từ 1,0 điểm trở xuống (<= 1.0). Tuyệt đối không nhầm lẫn điểm <5.0 là điểm liệt.
+                            - Cần đánh giá rộng rãi các tổ hợp môn mới theo chương trình GDPT 2018 (VD: C14, C19, A08, D14...) nếu học sinh có thế mạnh ở các môn này.
+
                             Yêu cầu cấu trúc bài tư vấn (Dùng xưng hô "thầy/cô" với "em"):
-                            1. **Đánh giá năng lực nổi trội:** Phân tích điểm mạnh, điểm yếu dựa trên các môn và tổ hợp xét tuyển.
-                            2. **Tư vấn ngành nghề & Trường Đại học:** Dựa vào tổ hợp điểm cao nhất, đề xuất 2-3 nhóm ngành nghề thực tế và phù hợp nhất hiện nay.
-                            3. **Chiến lược giai đoạn nước rút:** Lời khuyên cụ thể cần tập trung cải thiện môn nào để đảm bảo đỗ Tốt nghiệp (chống liệt) và nâng cao cơ hội trúng tuyển Đại học.
-                            Trình bày thật mạch lạc, chân thành, tạo động lực tốt nhất cho học sinh.
+                            1. **Đánh giá năng lực nổi trội:** Phân tích điểm mạnh, điểm yếu dựa trên các môn và tổ hợp xét tuyển. Cảnh báo rủi ro trượt tốt nghiệp nếu có môn điểm <= 1.0.
+                            2. **Tư vấn ngành nghề & Trường Đại học:** Dựa vào tổ hợp điểm cao nhất, đề xuất 2-3 nhóm ngành nghề thực tế và phù hợp nhất. Mở rộng tư vấn thêm các khối có môn Giáo dục KT&PL (nếu có thi).
+                            3. **Chiến lược giai đoạn nước rút:** Lời khuyên cụ thể cần tập trung cải thiện môn nào để đảm bảo an toàn Tốt nghiệp (điểm > 1.0) và nâng cao cơ hội trúng tuyển Đại học.
+                            Trình bày mạch lạc, chân thành, tạo động lực.
                             """
                             st.session_state.ai_ket_qua_t5 = model.generate_content(prompt).text
                         except Exception as e: st.error(f"Lỗi AI: {e}")
