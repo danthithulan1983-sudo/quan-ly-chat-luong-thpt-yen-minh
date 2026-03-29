@@ -13,60 +13,102 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 import re
 import numpy as np
 
-# Cấu hình tab trình duyệt
+# ==========================================
+# 0. CẤU HÌNH HỆ THỐNG & GIAO DIỆN
+# ==========================================
 st.set_page_config(page_title="Quản trị KHTN 2026 - THPT Yên Minh", page_icon="🎓", layout="wide")
 
-# ==========================================
-# 0. GIAO DIỆN HEADER
-# ==========================================
 st.markdown("""
 <div style="text-align: center; margin-top: 10px; margin-bottom: 0px;">
     <h1 style="color: #1A365D; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-weight: 900; font-size: 2.6rem; text-transform: uppercase; letter-spacing: 2px;">
-        HỆ THỐNG QUẢN TRỊ CHẤT LƯỢNG ĐA CHIỀU
+        HỆ SINH THÁI QUẢN TRỊ CHẤT LƯỢNG ĐA CHIỀU
     </h1>
 </div>
 """, unsafe_allow_html=True)
 
 col_trai, col_giua, col_phai = st.columns([1, 2, 1]) 
 with col_giua:
-    try:
-        st.image("logo.png", use_container_width=True)
-    except Exception as e:
-        pass
+    try: st.image("logo.png", use_container_width=True)
+    except: pass
         
 st.markdown("<hr style='border: 0; height: 1px; background-image: linear-gradient(to right, rgba(0,0,0,0), rgba(0,0,0,0.1), rgba(0,0,0,0)); margin-bottom: 30px;'>", unsafe_allow_html=True)
 
 # ==========================================
-# 1. CÁC HÀM XỬ LÝ LÕI ĐỌC DỮ LIỆU & TẠO FILE WORD
+# 1. HÀM TẠO FILE WORD CHUẨN NGHỊ ĐỊNH 30/2020/NĐ-CP
 # ==========================================
-def tao_file_word(noi_dung_ai, tieu_de_bao_cao):
-    """Hàm tạo file Word từ văn bản AI sinh ra"""
+def tao_file_word_chuan_nd30(noi_dung_ai, tieu_de_bao_cao):
     doc = docx.Document()
-    # Thêm tiêu đề
-    h = doc.add_heading(tieu_de_bao_cao, level=1)
-    h.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
-    # Thêm nội dung (Có xử lý in đậm **text** của Markdown cơ bản)
+    section = doc.sections[0]
+    section.top_margin = Cm(2)
+    section.bottom_margin = Cm(2)
+    section.left_margin = Cm(3)
+    section.right_margin = Cm(1.5)
+
+    table = doc.add_table(rows=1, cols=2)
+    table.columns[0].width = Cm(7.5)
+    table.columns[1].width = Cm(9.5)
+    
+    c1 = table.cell(0, 0).paragraphs[0]
+    run1 = c1.add_run("TRƯỜNG THPT YÊN MINH\n")
+    run1.font.size = Pt(12)
+    run1.bold = True
+    run2 = c1.add_run("TỔ TỰ NHIÊN")
+    run2.font.size = Pt(12)
+    run2.bold = True
+    c1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    
+    c2 = table.cell(0, 1).paragraphs[0]
+    run3 = c2.add_run("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM\n")
+    run3.font.size = Pt(12)
+    run3.bold = True
+    run4 = c2.add_run("Độc lập - Tự do - Hạnh phúc")
+    run4.font.size = Pt(13)
+    run4.bold = True
+    c2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    
+    doc.add_paragraph("\n")
+    tieu_de = doc.add_paragraph()
+    run_td = tieu_de.add_run(tieu_de_bao_cao.upper())
+    run_td.font.size = Pt(14)
+    run_td.bold = True
+    tieu_de.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    
     for line in noi_dung_ai.split('\n'):
         line = line.strip()
         if line:
             p = doc.add_paragraph()
-            # Xử lý gạch đầu dòng
-            if line.startswith('* ') or line.startswith('- '):
-                p.style = 'List Bullet'
-                line = line[2:]
-            
-            # Xử lý in đậm
             parts = line.split('**')
             for idx, part in enumerate(parts):
                 run = p.add_run(part)
-                if idx % 2 != 0:  # Những phần nằm giữa ** **
+                run.font.name = 'Times New Roman'
+                run.font.size = Pt(13)
+                if idx % 2 != 0: 
                     run.bold = True
-                    
+            
+            if line.startswith('* ') or line.startswith('- '):
+                p.style = 'List Bullet'
+
+    doc.add_paragraph("\n")
+    sign_table = doc.add_table(rows=1, cols=2)
+    sign_table.columns[0].width = Cm(8)
+    sign_table.columns[1].width = Cm(9)
+    
+    nn = sign_table.cell(0, 0).paragraphs[0]
+    nn.add_run("Nơi nhận:\n- BGH (để b/c);\n- Lưu VT, Tổ CM.").font.size = Pt(11)
+    
+    nk = sign_table.cell(0, 1).paragraphs[0]
+    nk.add_run("PHÓ HIỆU TRƯỞNG\n").bold = True
+    nk.add_run("(Phụ trách Chuyên môn)").italic = True
+    nk.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    
     buffer = io.BytesIO()
     doc.save(buffer)
     return buffer.getvalue()
 
+# ==========================================
+# 2. CÁC HÀM XỬ LÝ LÕI ĐỌC DỮ LIỆU
+# ==========================================
 @st.cache_data(ttl=10)
 def load_and_transform_data(url):
     try:
@@ -265,7 +307,7 @@ def ghi_ket_qua_len_sheet(df_ket_qua, link_sheet, ten_sheet_dich="Bao_Cao_AI"):
         return False, f"❌ Lỗi ghi dữ liệu: {e}"
 
 # ==========================================
-# 2. GIAO DIỆN HỆ THỐNG
+# 3. GIAO DIỆN HỆ THỐNG
 # ==========================================
 with st.sidebar:
     st.header("⚙️ Quản trị Hệ thống")
@@ -279,7 +321,7 @@ with st.sidebar:
     gsheet_url = st.text_input("🔗 Dán link Google Sheet:")
 
 # ==========================================
-# 3. LUỒNG PHÂN TÍCH CHÍNH & 5 TAB BÁO CÁO
+# 4. LUỒNG PHÂN TÍCH CHÍNH & 5 TAB BÁO CÁO
 # ==========================================
 if gsheet_url:
     df_doc, list_all_classes, ct_chung_doc, dict_ct_mon_doc, err = load_and_transform_data(gsheet_url)
@@ -449,10 +491,10 @@ if gsheet_url:
                 if "ai_ket_qua_t3" in st.session_state and st.session_state.ai_ket_qua_t3 != "":
                     st.markdown("#### 💡 Giải pháp Nâng cao Chất lượng (AI Đề xuất)")
                     st.info(st.session_state.ai_ket_qua_t3)
-                    # NÚT XUẤT WORD
-                    word_data_t3 = tao_file_word(st.session_state.ai_ket_qua_t3, f"BÁO CÁO PHÂN TÍCH CHUYÊN MÔN - {chon_mon.upper()} ({chon_lan.upper()})")
+                    # XUẤT WORD CHUẨN NGHỊ ĐỊNH 30
+                    word_data_t3 = tao_file_word_chuan_nd30(st.session_state.ai_ket_qua_t3, f"BÁO CÁO PHÂN TÍCH CHUYÊN MÔN - {chon_mon.upper()} ({chon_lan.upper()})")
                     st.download_button(
-                        label="📄 Tải Báo cáo AI (Định dạng Word)",
+                        label="📄 Tải Báo cáo chuẩn Nghị định 30",
                         data=word_data_t3,
                         file_name=f"Bao_cao_AI_{chon_mon}_{chon_lan}.docx",
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -569,10 +611,10 @@ if gsheet_url:
             if "ai_ket_qua_t4" in st.session_state and st.session_state.ai_ket_qua_t4 != "":
                 st.markdown("#### 💡 Cố vấn Quản trị Chất lượng (AI Đề xuất)")
                 st.info(st.session_state.ai_ket_qua_t4)
-                # NÚT XUẤT WORD
-                word_data_t4 = tao_file_word(st.session_state.ai_ket_qua_t4, "BÁO CÁO PHÂN TÍCH CHẤT LƯỢNG TOÀN TRƯỜNG")
+                # XUẤT WORD CHUẨN NGHỊ ĐỊNH 30
+                word_data_t4 = tao_file_word_chuan_nd30(st.session_state.ai_ket_qua_t4, "BÁO CÁO PHÂN TÍCH CHẤT LƯỢNG TOÀN TRƯỜNG")
                 st.download_button(
-                    label="📄 Tải Báo cáo AI (Định dạng Word)",
+                    label="📄 Tải Báo cáo chuẩn Nghị định 30",
                     data=word_data_t4,
                     file_name="Bao_cao_AI_Toan_Truong.docx",
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -580,7 +622,7 @@ if gsheet_url:
                 )
 
         # ---------------------------------------------------------------------
-        # TAB 5: XÉT TỐT NGHIỆP THPT & ĐẠI HỌC (ĐÃ BỔ SUNG ĐẦY ĐỦ TỔ HỢP)
+        # TAB 5: XÉT TỐT NGHIỆP THPT & ĐẠI HỌC (TÍCH HỢP AI HƯỚNG NGHIỆP)
         # ---------------------------------------------------------------------
         with tab5:
             st.markdown("#### 🎓 HỆ THỐNG XÉT TỐT NGHIỆP VÀ ĐẠI HỌC 2026")
@@ -637,24 +679,11 @@ if gsheet_url:
                 'KTPL': get_col(mon_cols, ['ktpl', 'gdcd', 'kinh tế', 'pháp luật', 'gdk'])
             }
             
-            # --- BỔ SUNG ĐẦY ĐỦ CÁC TỔ HỢP HIỆN HÀNH THEO GDPT 2018 ---
+            # Khởi tạo các tổ hợp xét tuyển phổ biến
             ds_to_hop = {
-                'A00': ['Toán', 'Lý', 'Hóa'], 'A01': ['Toán', 'Lý', 'Anh'], 'A02': ['Toán', 'Lý', 'Sinh'],
-                'A03': ['Toán', 'Lý', 'Sử'], 'A04': ['Toán', 'Lý', 'Địa'], 'A05': ['Toán', 'Hóa', 'Sử'],
-                'A06': ['Toán', 'Hóa', 'Địa'], 'A07': ['Toán', 'Sử', 'Địa'], 'A08': ['Toán', 'Sử', 'KTPL'],
-                'A09': ['Toán', 'Địa', 'KTPL'], 'A10': ['Toán', 'Lý', 'KTPL'], 'A11': ['Toán', 'Hóa', 'KTPL'],
-                'B00': ['Toán', 'Hóa', 'Sinh'], 'B02': ['Toán', 'Sinh', 'Địa'], 'B03': ['Toán', 'Sinh', 'Sử'], 'B08': ['Toán', 'Sinh', 'Anh'],
-                'C00': ['Văn', 'Sử', 'Địa'], 'C01': ['Toán', 'Văn', 'Lý'], 'C02': ['Toán', 'Văn', 'Hóa'],
-                'C03': ['Toán', 'Văn', 'Sử'], 'C04': ['Toán', 'Văn', 'Địa'], 'C05': ['Văn', 'Lý', 'Hóa'],
-                'C06': ['Văn', 'Lý', 'Sinh'], 'C07': ['Văn', 'Lý', 'Sử'], 'C08': ['Văn', 'Hóa', 'Sinh'],
-                'C09': ['Văn', 'Lý', 'Địa'], 'C10': ['Văn', 'Hóa', 'Sử'], 'C11': ['Văn', 'Hóa', 'Địa'],
-                'C12': ['Văn', 'Sinh', 'Sử'], 'C13': ['Văn', 'Sinh', 'Địa'], 'C14': ['Toán', 'Văn', 'KTPL'],
-                'C16': ['Văn', 'Lý', 'KTPL'], 'C17': ['Văn', 'Hóa', 'KTPL'], 'C18': ['Văn', 'Sinh', 'KTPL'],
-                'C19': ['Văn', 'Sử', 'KTPL'], 'C20': ['Văn', 'Địa', 'KTPL'],
-                'D01': ['Toán', 'Văn', 'Anh'], 'D07': ['Toán', 'Hóa', 'Anh'], 'D08': ['Toán', 'Sinh', 'Anh'],
-                'D09': ['Toán', 'Sử', 'Anh'], 'D10': ['Toán', 'Địa', 'Anh'], 'D11': ['Văn', 'Lý', 'Anh'],
-                'D12': ['Văn', 'Hóa', 'Anh'], 'D13': ['Văn', 'Sinh', 'Anh'], 'D14': ['Văn', 'Sử', 'Anh'],
-                'D15': ['Văn', 'Địa', 'Anh']
+                'A00': ['Toán', 'Lý', 'Hóa'], 'A01': ['Toán', 'Lý', 'Anh'], 'B00': ['Toán', 'Hóa', 'Sinh'], 
+                'C00': ['Văn', 'Sử', 'Địa'], 'C14': ['Toán', 'Văn', 'KTPL'], 'C19': ['Văn', 'Sử', 'KTPL'],
+                'C20': ['Văn', 'Địa', 'KTPL'], 'D01': ['Toán', 'Văn', 'Anh'], 'D07': ['Toán', 'Hóa', 'Anh']
             }
             
             to_hop_hien_co = []
@@ -705,3 +734,57 @@ if gsheet_url:
                         if thanh_cong: st.success(msg)
                         else: st.error(msg)
                     else: st.warning("🔒 Vui lòng đăng nhập quyền Quản trị!")
+
+            # ==============================================================
+            # TÍNH NĂNG MỚI: AI TƯ VẤN HƯỚNG NGHIỆP TỪNG HỌC SINH
+            # ==============================================================
+            st.markdown("---")
+            st.markdown("#### 🧭 AI TƯ VẤN HƯỚNG NGHIỆP CHUYÊN SÂU TỪNG HỌC SINH")
+            st.info("💡 Lựa chọn tên học sinh để hệ thống tự động phân tích phổ điểm, định hướng chọn ngành, chọn khối phù hợp. Có thể tải về làm tư liệu họp Phụ huynh.")
+            
+            ds_hoc_sinh_tab5 = sorted(df_wide_show['Ten_Hoc_Sinh'].astype(str).unique())
+            chon_hs_tu_van = st.selectbox("👤 Chọn học sinh cần tư vấn:", ds_hoc_sinh_tab5)
+
+            if st.button("🤖 AI PHÂN TÍCH & TƯ VẤN HƯỚNG NGHIỆP", type="primary", use_container_width=True, key="btn_ai_t5"):
+                if is_admin:
+                    with st.spinner(f"Đang phân tích phổ điểm và định hướng nghề nghiệp cho {chon_hs_tu_van}..."):
+                        try:
+                            genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+                            cac_model = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                            model = genai.GenerativeModel(next((m for m in cac_model if 'flash' in m), cac_model[0]))
+
+                            # Lấy data của học sinh được chọn
+                            data_hs = df_wide_show[df_wide_show['Ten_Hoc_Sinh'] == chon_hs_tu_van].iloc[0]
+                            str_data = data_hs.to_string()
+
+                            prompt = f"""
+                            Đóng vai trò là Chuyên gia Tư vấn Hướng nghiệp và Tuyển sinh Đại học (kỳ thi Tốt nghiệp THPT 2026).
+                            Hãy phân tích bảng điểm thi của học sinh {chon_hs_tu_van}:
+                            {str_data}
+
+                            Yêu cầu cấu trúc bài tư vấn (Dùng xưng hô "thầy/cô" với "em"):
+                            1. **Đánh giá năng lực nổi trội:** Phân tích điểm mạnh, điểm yếu dựa trên các môn và tổ hợp xét tuyển.
+                            2. **Tư vấn ngành nghề & Trường Đại học:** Dựa vào tổ hợp điểm cao nhất, đề xuất 2-3 nhóm ngành nghề thực tế và phù hợp nhất hiện nay.
+                            3. **Chiến lược giai đoạn nước rút:** Lời khuyên cụ thể cần tập trung cải thiện môn nào để đảm bảo đỗ Tốt nghiệp (chống liệt) và nâng cao cơ hội trúng tuyển Đại học.
+                            Trình bày thật mạch lạc, chân thành, tạo động lực tốt nhất cho học sinh.
+                            """
+                            st.session_state.ai_ket_qua_t5 = model.generate_content(prompt).text
+                        except Exception as e: st.error(f"Lỗi AI: {e}")
+                else: st.warning("🔒 Cần quyền Quản trị để dùng AI!")
+
+            if "ai_ket_qua_t5" in st.session_state and st.session_state.ai_ket_qua_t5 != "":
+                st.markdown(f"#### 💡 Bản Tư Vấn: {chon_hs_tu_van}")
+                st.success(st.session_state.ai_ket_qua_t5)
+
+                word_data_t5 = tao_file_word_chuan_nd30(
+                    st.session_state.ai_ket_qua_t5,
+                    f"BẢN TƯ VẤN HƯỚNG NGHIỆP VÀ XÉT TUYỂN ĐẠI HỌC\nHọc sinh: {chon_hs_tu_van}"
+                )
+                st.download_button(
+                    label="📄 Tải Bản Tư Vấn (Word) để gửi Phụ huynh/Học sinh",
+                    data=word_data_t5,
+                    file_name=f"Tu_Van_Huong_Nghiep_{chon_hs_tu_van}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key="btn_word_tuvan_t5",
+                    use_container_width=True
+                )
