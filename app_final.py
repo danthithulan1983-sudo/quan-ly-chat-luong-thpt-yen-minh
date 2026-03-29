@@ -239,17 +239,26 @@ def load_and_transform_data(url):
         df_doc['Lop'] = df_doc['Lop'].fillna("Chưa rõ Lớp").astype(str).replace('nan', 'Chưa rõ Lớp').replace('', 'Chưa rõ Lớp')
         df_doc['Ten_Hoc_Sinh'] = df_doc['Ten_Hoc_Sinh'].fillna("Chưa rõ").astype(str).replace('nan', 'Chưa rõ').replace('', 'Chưa rõ')
         
+        # ==============================================================
+        # BỘ LỌC ĐÃ ĐƯỢC NÂNG CẤP ĐỂ LOẠI BỎ TRIỆT ĐỂ DÒNG CHỈ TIÊU/THỐNG KÊ
+        # ==============================================================
         def is_hoc_sinh_that(row):
             ten = str(row['Ten_Hoc_Sinh']).lower().strip()
             lop = str(row['Lop']).lower().strip()
             
-            if (ten in ['', 'nan', 'none', 'chưa rõ']) and (lop in ['', 'nan', 'none', 'chưa rõ lớp']):
+            # 1. Bắt buộc phải có tên. Tên trống 100% là dòng rác ở cuối danh sách!
+            if ten in ['', 'nan', 'none', 'chưa rõ', 'stt', 'tt', '0']:
                 return False
                 
-            tu_khoa_rac = ['chỉ tiêu', 'chi tieu', 'trung bình', 'trung binh', 'tổng cộng', 'tổng điểm', 'điểm tb', 'toàn trường', 'toàn khối', 'tỉ lệ', 'tỷ lệ', 'chênh lệch']
-            if any(k in ten for k in tu_khoa_rac) or any(k in lop for k in tu_khoa_rac):
-                return False
-                
+            # 2. Bộ từ khóa ngăn chặn dòng thống kê lạc vào cột Tên/Lớp
+            tu_khoa_rac = ['chỉ tiêu', 'chi tieu', 'trung bình', 'trung binh', 'tổng cộng', 'tổng số', 'điểm tb', 'toàn trường', 'toàn khối', 'tỉ lệ', 'tỷ lệ', 'chênh lệch', 'kém', 'yếu', 'khá', 'giỏi', 'điểm liệt']
+            
+            for k in tu_khoa_rac:
+                if ten.startswith(k) or lop.startswith(k):
+                    return False
+                if ten == k or lop == k:
+                    return False
+                    
             if ten in ['tb', 'đtb', 'tổng', 'tb chung'] or lop in ['tb', 'đtb', 'tổng', 'tb chung']:
                 return False
                 
@@ -490,7 +499,6 @@ if gsheet_url:
                         
                 if "ai_ket_qua_t3" in st.session_state and st.session_state.ai_ket_qua_t3 != "":
                     st.markdown("#### 💡 Bản Thảo Báo Cáo AI (BẠN CÓ THỂ CHỈNH SỬA)")
-                    # SỬ DỤNG TEXT_AREA THAY VÌ INFO ĐỂ CHỈNH SỬA
                     edited_t3 = st.text_area("✍️ Tinh chỉnh nội dung trước khi xuất Word:", value=st.session_state.ai_ket_qua_t3, height=350, key="edit_t3")
                     
                     word_data_t3 = tao_file_word_chuan_nd30(edited_t3, f"BÁO CÁO PHÂN TÍCH CHUYÊN MÔN - {chon_mon.upper()} ({chon_lan.upper()})")
@@ -512,7 +520,6 @@ if gsheet_url:
             
             df_2lan = df_doc[df_doc['Lan_Thi'].isin([lan_truoc, lan_sau])]
             
-            # TÍNH CHUẨN XÁC: TB Học sinh trước, rồi mới lấy TB Lớp
             df_hs_tab4 = df_2lan.groupby(['Lan_Thi', 'Ten_Hoc_Sinh', 'Lop'])['Diem_Thi'].mean().reset_index()
             
             danh_sach_lop = list(list_all_classes)
@@ -597,7 +604,6 @@ if gsheet_url:
                                 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
                                 cac_model = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
                                 model = genai.GenerativeModel(next((m for m in cac_model if 'flash' in m), cac_model[0]))
-                                # ĐÃ SỬA CHỨC DANH TRONG PROMPT THÀNH PHÓ HIỆU TRƯỞNG ĐỂ ĐỒNG NHẤT
                                 prompt = f"""
                                 Đóng vai trò là Phó Hiệu trưởng phụ trách chuyên môn. Hãy phân tích bảng dữ liệu tổng hợp sự tiến bộ của toàn trường:
                                 {df_tong_hop_all.to_string(index=False)}
@@ -612,7 +618,6 @@ if gsheet_url:
                         
             if "ai_ket_qua_t4" in st.session_state and st.session_state.ai_ket_qua_t4 != "":
                 st.markdown("#### 💡 Bản Thảo Báo Cáo AI (BẠN CÓ THỂ CHỈNH SỬA)")
-                # SỬ DỤNG TEXT_AREA CHO PHÉP SỬA TRƯỚC KHI TRÌNH KÝ
                 edited_t4 = st.text_area("✍️ Tinh chỉnh nội dung trước khi xuất trình ký:", value=st.session_state.ai_ket_qua_t4, height=400, key="edit_t4")
                 
                 word_data_t4 = tao_file_word_chuan_nd30(edited_t4, "BÁO CÁO PHÂN TÍCH CHẤT LƯỢNG TOÀN TRƯỜNG")
@@ -625,7 +630,7 @@ if gsheet_url:
                 )
 
         # ---------------------------------------------------------------------
-        # TAB 5: XÉT TỐT NGHIỆP THPT & ĐẠI HỌC (ĐÃ SỬA LUẬT ĐIỂM LIỆT + THÊM CÁC TỔ HỢP)
+        # TAB 5: XÉT TỐT NGHIỆP THPT & ĐẠI HỌC
         # ---------------------------------------------------------------------
         with tab5:
             st.markdown("#### 🎓 HỆ THỐNG XÉT TỐT NGHIỆP VÀ ĐẠI HỌC 2026")
@@ -663,7 +668,6 @@ if gsheet_url:
             
             df_wide['Điểm Xét TN'] = ((((df_wide['Tổng 4 Môn'] + df_wide['KK_Thuc']) / 4) + dtb_cac_nam) / 2 + df_wide['UT_Thuc']).round(2)
             
-            # CẬP NHẬT LUẬT ĐIỂM LIỆT LÀ <= 1.0 THEO QUY CHẾ HIỆN HÀNH
             df_wide['Kết quả TN'] = df_wide.apply(lambda row: "ĐỖ ✅" if row['Điểm Xét TN'] >= 5.0 and row['Điểm Liệt'] > 1.0 else "TRƯỢT ❌", axis=1)
             
             def get_col(danh_sach_cot, keywords):
@@ -753,7 +757,7 @@ if gsheet_url:
                     else: st.warning("🔒 Vui lòng đăng nhập quyền Quản trị!")
 
             # ==============================================================
-            # TÍNH NĂNG MỚI: AI TƯ VẤN HƯỚNG NGHIỆP TỪNG HỌC SINH (NÂNG CẤP PROMPT & CHỈNH SỬA)
+            # TÍNH NĂNG MỚI: AI TƯ VẤN HƯỚNG NGHIỆP TỪNG HỌC SINH 
             # ==============================================================
             st.markdown("---")
             st.markdown("#### 🧭 AI TƯ VẤN HƯỚNG NGHIỆP CHUYÊN SÂU TỪNG HỌC SINH")
@@ -795,7 +799,6 @@ if gsheet_url:
             if "ai_ket_qua_t5" in st.session_state and st.session_state.ai_ket_qua_t5 != "":
                 st.markdown(f"#### 💡 Bản Tư Vấn: {chon_hs_tu_van} (BẠN CÓ THỂ CHỈNH SỬA)")
                 
-                # SỬ DỤNG TEXT_AREA CHO PHÉP GIÁO VIÊN TÌNH CHỈNH LỜI NHẬN XÉT CỦA AI TRƯỚC KHI IN
                 edited_t5 = st.text_area("✍️ Cá nhân hóa và tinh chỉnh lại lời tư vấn gửi Phụ huynh/Học sinh:", value=st.session_state.ai_ket_qua_t5, height=450, key="edit_t5")
 
                 word_data_t5 = tao_file_word_chuan_nd30(
